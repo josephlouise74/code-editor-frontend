@@ -1,0 +1,655 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+    Maximize2,
+    Minimize2,
+    Share2,
+    Save,
+    Play,
+    MessageSquare,
+    X,
+    LayoutGrid,
+    Code,
+    Eye,
+    Terminal,
+    Users,
+    Copy,
+    Trash,
+    RefreshCw
+} from "lucide-react";
+import { html as htmlLang } from "@codemirror/lang-html";
+import { css as cssLang } from "@codemirror/lang-css";
+import { javascript as jsLang } from "@codemirror/lang-javascript";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
+import { nanoid } from "nanoid";
+import { ChatMessages } from "@/components/CodeEditor/ChatMessages";
+import ToolBar from "@/components/CodeEditor/Toolbar";
+import PreviewPanel from "@/components/CodeEditor/PreviewPanel";
+
+// Define interfaces at the top of the file
+interface Message {
+    id: string;
+    sender: string;
+    content: string;
+    timestamp: string;
+    system?: boolean;
+    isSelf?: boolean;
+}
+
+interface User {
+    id: string;
+    name: string;
+    online: boolean;
+}
+
+interface ConsoleLog {
+    id: string;
+    type: 'log' | 'error' | 'warn' | 'info';
+    content: string;
+    timestamp: string;
+}
+
+// Mock socket functions (replace with your actual implementation)
+// Update socket type
+const mockSocket: {
+    emit: (event: string, data: any) => void;
+    on: (event: string, callback: (data: any) => void) => void;
+    off: (event: string, callback: (data: any) => void) => void;
+} = {
+    emit: (event, data) => console.log(`Socket emitted: ${event}`, data),
+    on: (event, callback) => { },
+    off: (event, callback) => { },
+};
+
+// Dynamically import CodeMirror to avoid SSR issues
+const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
+
+export default function HomeScreen() {
+    // State variables with type annotations
+    const [htmlCode, setHtmlCode] = useState<string>("<h1>Hello World</h1>\n<button id=\"testBtn\">Test Console</button>");
+    const [cssCode, setCssCode] = useState<string>(
+        "h1 { color: blue; }\nbutton { padding: 8px 16px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }"
+    );
+    const [jsCode, setJsCode] = useState<string>(
+        "document.getElementById('testBtn').addEventListener('click', () => {\n  console.log('Button clicked!');\n  console.error('This is an error');\n  console.warn('This is a warning');\n});"
+    );
+    const [srcDoc, setSrcDoc] = useState<string>("");
+    const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+    const [copied, setCopied] = useState<boolean>(false);
+    const [roomId, setRoomId] = useState<string>("");
+    const [isConnected, setIsConnected] = useState<boolean>(false);
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [users, setUsers] = useState<User[]>([
+        { id: "1", name: "You", online: true },
+        { id: "2", name: "Guest123", online: true },
+        { id: "3", name: "Coder42", online: false },
+    ]);
+    const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
+    const [messageInput, setMessageInput] = useState<string>("");
+    const [username, setUsername] = useState<string>("");
+    const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+    const [layout, setLayout] = useState<"split" | "editor" | "preview">("split");
+    const [showConsole, setShowConsole] = useState<boolean>(true);
+
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const socket = useRef<typeof mockSocket>(mockSocket);
+    const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+    // Helper: Get CSS class for console log based on type
+    function getConsoleLogClass(type: string): string {
+        switch (type) {
+            case "error":
+                return "text-red-400";
+            case "warn":
+                return "text-yellow-400";
+            case "info":
+                return "text-blue-400";
+            default:
+                return "text-green-400";
+        }
+    }
+
+    // Connect to room with type annotations
+    const connectToRoom = (roomId: string): void => {
+        console.log(`Connecting to room: ${roomId}`);
+        // Mock connection establishment
+        setTimeout(() => {
+            setIsConnected(true);
+
+            // Add welcome message
+            setMessages((prev: Message[]) => [
+                ...prev,
+                {
+                    id: nanoid(),
+                    sender: "System",
+                    content: `Welcome to room ${roomId}! Share this link with others to collaborate.`,
+                    timestamp: new Date().toISOString(),
+                    system: true,
+                },
+            ]);
+        }, 1000);
+
+        // Mock socket event handlers
+        socket.current.on("code-update", (data) => {
+            if (data.type === "html") setHtmlCode(data.content);
+            if (data.type === "css") setCssCode(data.content);
+            if (data.type === "js") setJsCode(data.content);
+        });
+
+        socket.current.on("chat-message", (data) => {
+            setMessages((prev) => [...prev, data]);
+        });
+
+        socket.current.on("user-joined", (user) => {
+            setUsers((prev) => [...prev, user]);
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: nanoid(),
+                    sender: "System",
+                    content: `${user.name} has joined the room`,
+                    timestamp: new Date().toISOString(),
+                    system: true,
+                },
+            ]);
+        });
+    };
+
+    // Intercept console logs from the iframe
+    useEffect(() => {
+        const handleConsoleMessage = (event: MessageEvent) => {
+            if (event.data && event.data.type === "console") {
+                setConsoleLogs((prev) => [
+                    ...prev,
+                    {
+                        id: nanoid(),
+                        type: event.data.logType,
+                        content: event.data.content,
+                        timestamp: new Date().toISOString(),
+                    },
+                ]);
+            }
+        };
+
+        window.addEventListener("message", handleConsoleMessage);
+        return () => window.removeEventListener("message", handleConsoleMessage);
+    }, []);
+
+    // Auto-scroll to bottom of messages
+    useEffect(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [messages]);
+
+    // Generate or get room ID from URL and connect
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        let id = params.get("room");
+
+        if (!id) {
+            id = nanoid(10);
+            const newUrl = `${window.location.pathname}?room=${id}`;
+            window.history.pushState({ path: newUrl }, "", newUrl);
+        }
+
+        setRoomId(id);
+        setUsername(`User-${nanoid(4)}`);
+        connectToRoom(id);
+
+        return () => {
+            // Clean up socket connection
+            if (socket.current) {
+                socket.current.off("code-update", () => { });
+                socket.current.off("chat-message", () => { });
+                socket.current.off("user-joined", () => { });
+            }
+        };
+    }, []);
+
+    // Update the live preview with a debounce and console intercept script
+    useEffect(() => {
+        const timeout = setTimeout(() => {
+            const consoleInterceptScript = `
+        <script>
+          const originalConsole = console;
+          console = {
+            log: function() {
+              originalConsole.log.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'log',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            },
+            error: function() {
+              originalConsole.error.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'error',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            },
+            warn: function() {
+              originalConsole.warn.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'warn',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            },
+            info: function() {
+              originalConsole.info.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'info',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            }
+          };
+        </script>
+      `;
+
+            const source = `
+        <html>
+          <head>
+            <style>${cssCode}</style>
+            ${consoleInterceptScript}
+          </head>
+          <body>
+            ${htmlCode}
+            <script>${jsCode}<\/script>
+          </body>
+        </html>
+      `;
+            setSrcDoc(source);
+        }, 250);
+        return () => clearTimeout(timeout);
+    }, [htmlCode, cssCode, jsCode]);
+
+    // Share the room URL for collaborative editing
+    const handleShareRoom = async () => {
+        const shareUrl = window.location.href;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (error) {
+            console.error('Failed to copy share URL:', error);
+        }
+    };
+
+    // Handle code changes and emit to other users
+    const handleCodeChange = (type: 'html' | 'css' | 'js', value: string) => {
+        if (type === "html") setHtmlCode(value);
+        if (type === "css") setCssCode(value);
+        if (type === "js") setJsCode(value);
+
+        // Emit changes to other users in the room
+        if (isConnected) {
+            socket.current.emit("code-update", {
+                room: roomId,
+                type,
+                content: value,
+            });
+        }
+    };
+
+    // Send chat message
+    const sendMessage = () => {
+        if (!messageInput.trim()) return;
+
+        const newMessage = {
+            id: nanoid(),
+            sender: username,
+            content: messageInput,
+            timestamp: new Date().toISOString(),
+            isSelf: true,
+        };
+
+        setMessages((prev) => [...prev, newMessage]);
+        setMessageInput("");
+
+        // Emit message to other users
+        if (isConnected) {
+            socket.current.emit("chat-message", {
+                room: roomId,
+                message: { ...newMessage, isSelf: false },
+            });
+        }
+    };
+
+    // Clear console logs
+    const clearConsole = () => {
+        setConsoleLogs([]);
+    };
+
+    // Save and run code
+    const saveAndRunCode = () => {
+        // In a real implementation, save to a database if needed
+        if (iframeRef.current) {
+            const iframe = iframeRef.current;
+            iframe.src = "about:blank";
+            setTimeout(() => {
+                iframe.srcdoc = srcDoc;
+            }, 50);
+        }
+        setConsoleLogs([]);
+    };
+
+    // Render Chat Sidebar
+    const renderChatSidebar = () => {
+        return (
+            <div className="flex flex-col h-full border-l dark:border-gray-800">
+                <Tabs defaultValue="chat" className="flex flex-col h-full">
+                    <div className="p-4 border-b dark:border-gray-800">
+                        <TabsList className="w-full">
+                            <TabsTrigger value="chat" className="flex-1">
+                                <MessageSquare className="w-4 h-4 mr-2" />
+                                Chat
+                            </TabsTrigger>
+                            <TabsTrigger value="users" className="flex-1">
+                                <Users className="w-4 h-4 mr-2" />
+                                Users
+                            </TabsTrigger>
+                        </TabsList>
+                    </div>
+
+                    <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
+                        <ChatMessages messages={messages} />
+
+                        <div className="p-4 border-t dark:border-gray-800">
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    sendMessage();
+                                }}
+                                className="flex space-x-2"
+                            >
+                                <Input
+                                    value={messageInput}
+                                    onChange={(e) => setMessageInput(e.target.value)}
+                                    placeholder="Type a message..."
+                                    className="flex-grow"
+                                />
+                                <Button type="submit" size="sm">
+                                    Send
+                                </Button>
+                            </form>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="users" className="p-0 m-0 h-full">
+                        <ScrollArea className="h-full p-4">
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-sm font-medium mb-2">Your details</h3>
+                                    <div className="flex items-center space-x-2">
+                                        <Avatar>
+                                            <AvatarFallback>user</AvatarFallback>
+                                        </Avatar>
+                                        <Input
+                                            value={username}
+                                            onChange={(e) => setUsername(e.target.value)}
+                                            placeholder="Your name"
+                                            className="h-8"
+                                        />
+                                    </div>
+                                </div>
+
+                                <Separator />
+
+                                <div>
+                                    <h3 className="text-sm font-medium mb-2">Online Users</h3>
+                                    <div className="space-y-2">
+                                        {users
+                                            .filter((u) => u.online)
+                                            .map((user) => (
+                                                <div key={user.id} className="flex items-center space-x-2">
+                                                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                                                    <Avatar className="h-8 w-8">
+                                                        <AvatarFallback>user</AvatarFallback>
+                                                    </Avatar>
+                                                    <span className="text-sm">
+                                                        {user.name}
+                                                        {user.id === "1" ? " (You)" : ""}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+
+                                {users.some((u) => !u.online) && (
+                                    <div>
+                                        <h3 className="text-sm font-medium mb-2">Offline Users</h3>
+                                        <div className="space-y-2">
+                                            {users
+                                                .filter((u) => !u.online)
+                                                .map((user) => (
+                                                    <div key={user.id} className="flex items-center space-x-2">
+                                                        <div className="w-2 h-2 rounded-full bg-gray-300" />
+                                                        <Avatar className="h-8 w-8">
+                                                            <AvatarFallback>user</AvatarFallback>
+                                                        </Avatar>
+                                                        <span className="text-sm text-muted-foreground">{user.name}</span>
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </ScrollArea>
+                    </TabsContent>
+                </Tabs>
+            </div>
+        );
+    };
+
+    return (
+        <TooltipProvider>
+            <div className="flex h-screen overflow-hidden bg-background mb-20">
+                {/* Main Content */}
+                <div className={`flex-grow flex flex-col ${!isFullScreen ? "lg:mr-[320px]" : ""}`}>
+                    {/* Top Toolbar - Pass handleSaveChanges to ToolBar */}
+                    <ToolBar
+                        roomId={roomId}
+                        isConnected={isConnected}
+                        isFullScreen={isFullScreen}
+                        copied={copied}
+                        layout={layout}
+                        setIsFullScreen={setIsFullScreen}
+                        setLayout={setLayout}
+                        saveAndRunCode={saveAndRunCode}
+                        handleShareRoom={handleShareRoom}
+                        setCopied={setCopied}
+                        handleSaveChanges={() => {
+                            console.log('HTML Code:', htmlCode);
+                            console.log('CSS Code:', cssCode);
+                            console.log('JavaScript Code:', jsCode);
+                            console.log('All Code Data:', {
+                                html: htmlCode,
+                                css: cssCode,
+                                javascript: jsCode
+                            });
+                        }}
+                    />
+
+                    {/* Notification Banners */}
+                    <div className="space-y-2 mx-4 my-2">
+                        {copied && (
+                            <div className="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 p-2 rounded-md flex justify-between items-center">
+                                <p className="text-sm text-green-600 dark:text-green-400">
+                                    Room link copied! Share it with others to collaborate in real-time.
+                                </p>
+                                <Button variant="ghost" size="sm" onClick={() => setCopied(false)}>
+                                    <X size={16} />
+                                </Button>
+                            </div>
+                        )}
+
+                        {isConnected && (
+                            <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-2 rounded-md">
+                                <div className="flex justify-between items-center">
+                                    {/* <p className="text-sm text-blue-600 dark:text-blue-400">
+                                        <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                        Connected to room: {roomId} • {users.filter((u) => u.online).length} users online
+                                    </p> */}
+                                    <div className="flex">
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={async () => {
+                                                        try {
+                                                            await navigator.clipboard.writeText(roomId);
+                                                            setCopied(true);
+                                                            setTimeout(() => setCopied(false), 2000);
+                                                        } catch (error) {
+                                                            console.error('Failed to copy room ID:', error);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Copy size={16} />
+                                                </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                <p>Copy Room ID</p>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex flex-1 h-full overflow-hidden">
+                        {/* Left Side - Code Editor */}
+                        {(layout === "editor" || layout === "split") && (
+                            <div className={`${layout === "split" ? "w-1/2" : "w-full"} flex flex-col h-full bg-background overflow-hidden`}>
+                                <div className="flex-grow min-h-0 overflow-auto p-4">
+                                    <Tabs defaultValue="html" className="h-full">
+                                        <TabsList className="mb-4">
+                                            <TabsTrigger value="html">HTML</TabsTrigger>
+                                            <TabsTrigger value="css">CSS</TabsTrigger>
+                                            <TabsTrigger value="js">JavaScript</TabsTrigger>
+                                        </TabsList>
+
+                                        <TabsContent value="html" className="m-0 h-full">
+                                            <Card className="h-full border-0 shadow-none">
+                                                <CardContent className="p-0 h-full">
+                                                    <CodeMirror
+                                                        value={htmlCode}
+                                                        height="70vh"
+                                                        extensions={[htmlLang()]}
+                                                        theme="dark"
+                                                        onChange={(value) => handleCodeChange("html", value)}
+                                                        className="rounded-md border h-full"
+                                                    />
+                                                </CardContent>
+                                            </Card>
+                                        </TabsContent>
+
+                                        <TabsContent value="css" className="m-0 h-full">
+                                            <Card className="h-full border-0 shadow-none">
+                                                <CardContent className="p-0 h-full">
+                                                    <CodeMirror
+                                                        value={cssCode}
+                                                        height="70vh"
+                                                        extensions={[cssLang()]}
+                                                        theme="dark"
+                                                        onChange={(value) => handleCodeChange("css", value)}
+                                                        className="rounded-md border h-full"
+                                                    />
+                                                </CardContent>
+                                            </Card>
+                                        </TabsContent>
+
+                                        <TabsContent value="js" className="m-0 h-full">
+                                            <Card className="h-full border-0 shadow-none">
+                                                <CardContent className="p-0 h-full">
+                                                    <CodeMirror
+                                                        value={jsCode}
+                                                        height="70vh"
+                                                        extensions={[jsLang()]}
+                                                        theme="dark"
+                                                        onChange={(value) => handleCodeChange("js", value)}
+                                                        className="rounded-md border h-full"
+                                                    />
+                                                </CardContent>
+                                            </Card>
+                                        </TabsContent>
+                                    </Tabs>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Right Side - Live Preview & Console */}
+                        {(layout === "preview" || layout === "split") && (
+                            <div className={`${layout === "split" ? "w-1/2" : "w-full"} flex flex-col bg-white dark:bg-gray-900 border-l dark:border-gray-800`}>
+                                <PreviewPanel
+                                    iframeRef={iframeRef}
+                                    srcDoc={srcDoc}
+                                    showConsole={showConsole}
+                                    setShowConsole={setShowConsole}
+                                    saveAndRunCode={saveAndRunCode}
+                                />
+
+                                {/* Console Output */}
+                                {showConsole && (
+                                    <div className="h-2/5 border-t dark:border-gray-800">
+                                        <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800">
+                                            <div className="text-sm font-medium flex items-center">
+                                                <Terminal size={14} className="mr-2" /> Console
+                                            </div>
+                                            <div className="flex space-x-2">
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button onClick={clearConsole} variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                                            <Trash size={14} />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        <p>Clear Console</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </div>
+                                        </div>
+                                        <ScrollArea className="h-full bg-black text-white p-2 font-mono text-sm">
+                                            {consoleLogs.length === 0 ? (
+                                                <div className="text-gray-500 italic p-2">No console output yet. Run your code to see logs here.</div>
+                                            ) : (
+                                                consoleLogs.map((log) => (
+                                                    <div key={log.id} className={`py-1 ${getConsoleLogClass(log.type)}`}>
+                                                        {log.content}
+                                                    </div>
+                                                ))
+                                            )}
+                                        </ScrollArea>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Chat Sidebar (Desktop) */}
+                <div className={`hidden sm:block fixed right-0 top-0 bottom-0 w-[320px] ${isFullScreen ? "hidden" : "lg:block"}`}>
+                    {renderChatSidebar()}
+                </div>
+            </div>
+        </TooltipProvider>
+    );
+}
