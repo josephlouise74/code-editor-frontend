@@ -46,7 +46,7 @@ export class RoomStore {
     async joinRoom(data: { accessCode: string; password: string }) {
         try {
             this.setLoading(true);
-            const response = await joinRoomApi(data);
+            const response: any = await joinRoomApi(data);
 
             if (response?.success) {
                 this.setCurrentRoom(response.data);

@@ -18,7 +18,7 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false }
  * @param {string} props.jsCode - JavaScript code content
  * @param {Function} props.handleCodeChange - Handle code changes
  */
-export default function EditorPanel({ htmlCode, cssCode, jsCode, handleCodeChange }) {
+export default function EditorPanel({ htmlCode, cssCode, jsCode, handleCodeChange }: any) {
     return (
         <div className="flex-grow min-h-0 overflow-auto p-4">
             <Tabs defaultValue="html" className="h-full">

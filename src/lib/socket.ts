@@ -28,29 +28,42 @@ interface RoomData {
     updatedAt: number;
 }
 
+/**
+ * Creates a mock socket connection
+ * @returns A socket connection instance
+ */
 export const createSocketConnection = (): Socket => {
     // Mock socket functions
     const socket = {
-        emit: (event: string, data: any) => console.log(`Socket emitted: ${event}`, data),
-        on: (event: string, callback: (data: any) => void) => { },
-        off: (event: string, callback: (data: any) => void) => { },
+        emit: (event: string, data: any): void => console.log(`Socket emitted: ${event}`, data),
+        on: (event: string, callback: (data: any) => void): void => { /* implementation */ },
+        off: (event: string, callback: (data: any) => void): void => { /* implementation */ },
     } as Socket;
 
     return socket;
 };
 
+/**
+ * Saves room data to the database
+ * @param roomData The room data to save
+ * @returns A promise that resolves when the save operation is complete
+ */
 export const saveRoomData = async (roomData: RoomData): Promise<void> => {
     try {
         // Here you would implement your Firebase save logic
         console.log('Saving room data to Firebase:', roomData);
         // Example Firebase implementation:
         // await setDoc(doc(db, 'rooms', roomData.roomId), roomData);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error saving room data:', error);
         throw error;
     }
 };
 
+/**
+ * Connects to a room and sets up event listeners
+ * @returns A cleanup function to disconnect from the room
+ */
 export const connectToRoom = (
     roomId: string,
     setIsConnected: (connected: boolean) => void,
@@ -61,11 +74,11 @@ export const connectToRoom = (
     setMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void,
     setUsers: (users: User[] | ((prev: User[]) => User[])) => void,
     socket: Socket
-): void => {
+): () => void => {
     console.log(`Connecting to room: ${roomId}`);
 
     // Initial room data fetch
-    const fetchRoomData = async () => {
+    const fetchRoomData = async (): Promise<void> => {
         try {
             // Here you would implement your Firebase fetch logic
             // Example:
@@ -76,7 +89,7 @@ export const connectToRoom = (
             //     setCssCode(data.codeContent.css);
             //     setJsCode(data.codeContent.javascript);
             // }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching room data:', error);
             addSystemMessage('Error loading room data. Please try again.');
         }
@@ -100,6 +113,9 @@ export const connectToRoom = (
                 break;
             case "js":
                 setJsCode(data.content);
+                break;
+            default:
+                console.warn(`Unknown code type: ${data.type}`);
                 break;
         }
     });
@@ -128,7 +144,7 @@ export const connectToRoom = (
             };
             await saveRoomData(roomData);
             addSystemMessage('Changes saved successfully!');
-        } catch (error) {
+        } catch (error: any) {
             addSystemMessage('Error saving changes. Please try again.');
         }
     });
@@ -142,7 +158,9 @@ export const connectToRoom = (
     };
 };
 
-// Function to emit code changes
+/**
+ * Emits code changes to the socket server
+ */
 export const emitCodeChange = (
     socket: Socket,
     type: 'html' | 'css' | 'js',
@@ -159,9 +177,29 @@ export const emitCodeChange = (
     });
 };
 
-// Function to save changes to Firebase
+/**
+ * Saves changes to Firebase
+ */
 export const saveChanges = async (
     roomId: string,
     codeContent: CodeContent,
-    password: string
+    password: string,
+    roomName: string = ''
 ): Promise<void> => {
+    try {
+        const roomData: RoomData = {
+            roomId,
+            roomName,
+            password,
+            codeContent,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        };
+
+        await saveRoomData(roomData);
+        console.log('Changes saved successfully!');
+    } catch (error: any) {
+        console.error('Error saving changes:', error);
+        throw error;
+    }
+};

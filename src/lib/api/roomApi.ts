@@ -40,7 +40,7 @@ interface JoinRoomData {
     email: string;
 }
 
-export const joinRoomApi = async (data: JoinRoomData) => {
+export const joinRoomApi = async (data: any) => {
     try {
         const response = await axios.post(
             `${baseUrl}/room/join`,
