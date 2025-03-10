@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Lock, Hash } from "lucide-react";
 import { createRoomApi } from "@/lib/api/roomApi";
+import Link from "next/link";
 
 // Update the schema to include email
 const roomSchema = z.object({
@@ -146,6 +147,19 @@ export default function CreateRoomForm() {
                             </Button>
                         </form>
                     </Form>
+
+                    {/* Add this new section */}
+                    <div className="mt-6 text-center">
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Don't have a room?{' '}
+                            <Link
+                                href="/"
+                                className="text-black hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 font-medium"
+                            >
+                                Join room
+                            </Link>
+                        </p>
+                    </div>
                 </CardContent>
             </Card>
         </div>
