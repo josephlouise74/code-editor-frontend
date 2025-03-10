@@ -1,24 +1,26 @@
-/**
- * @typedef {Object} ConsoleLog
- * @property {string} id - Log ID
- * @property {string} type - Log type (log, error, warn, info)
- * @property {string} content - Log content
- * @property {string} timestamp - Log timestamp
- */
-
-/**
- * Hook to manage console functionality
- * @returns {Object} Console state and methods
- */
-import { useState, useEffect } from "react";
 import { nanoid } from "nanoid";
+import { useEffect, useState } from "react";
+
+interface ConsoleLog {
+    id: string;
+    type: string;
+    content: string;
+    timestamp: string;
+}
+
+interface ConsoleMessage {
+    data: {
+        type: string;
+        logType: string;
+        content: string;
+    };
+}
 
 export function useConsole() {
-    const [consoleLogs, setConsoleLogs] = useState([]);
-    const [showConsole, setShowConsole] = useState(true);
+    const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
+    const [showConsole, setShowConsole] = useState<boolean>(true);
 
-    // Helper: Get CSS class for console log based on type
-    const getConsoleLogClass = (type) => {
+    const getConsoleLogClass = (type: string): string => {
         switch (type) {
             case "error":
                 return "text-red-400";
@@ -31,14 +33,12 @@ export function useConsole() {
         }
     };
 
-    // Clear console logs
-    const clearConsole = () => {
+    const clearConsole = (): void => {
         setConsoleLogs([]);
     };
 
-    // Intercept console logs from the iframe
     useEffect(() => {
-        const handleConsoleMessage = (event) => {
+        const handleConsoleMessage = (event: ConsoleMessage): void => {
             if (event.data && event.data.type === "console") {
                 setConsoleLogs((prev) => [
                     ...prev,
@@ -52,8 +52,8 @@ export function useConsole() {
             }
         };
 
-        window.addEventListener("message", handleConsoleMessage);
-        return () => window.removeEventListener("message", handleConsoleMessage);
+        window.addEventListener("message", handleConsoleMessage as any);
+        return () => window.removeEventListener("message", handleConsoleMessage as any);
     }, []);
 
     return {

@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getRoomData, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
+import { getAllChats, getRoomData, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
 import { roomStore } from "@/lib/store/roomStore";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
@@ -29,6 +29,7 @@ import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
+import { sendNewMessageInGroupChatApiRequest } from "@/lib/api/roomApi"; // Add this import
 
 // Define interfaces at the top of the file
 interface Message {
@@ -82,7 +83,7 @@ export default function HomeScreen() {
     const [copied, setCopied] = useState<boolean>(false);
     const [roomId, setRoomId] = useState<string>("");
     const [isConnected, setIsConnected] = useState<boolean>(false);
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messages, setMessages] = useState<any[]>([]);
     const [users, setUsers] = useState<any[]>([]);
     const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
     const [messageInput, setMessageInput] = useState<string>("");
@@ -90,7 +91,8 @@ export default function HomeScreen() {
     const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
     const [layout, setLayout] = useState<"split" | "editor" | "preview">("split");
     const [showConsole, setShowConsole] = useState<boolean>(true);
-
+    // Add this with other state declarations
+    const [isMessageSending, setIsMessageSending] = useState<boolean>(false);
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const socket = useRef<typeof mockSocket>(mockSocket);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -99,6 +101,9 @@ export default function HomeScreen() {
     const searchParams = useSearchParams();
     const token = searchParams.get('token');
     const [isSaving, setIsSaving] = useState(false);
+
+    const [userData, setUserData] = useState<any>(null)
+
 
     const isParticipant = searchParams.get('participant') === 'true';
     // Helper: Get CSS class for console log based on type
@@ -115,72 +120,124 @@ export default function HomeScreen() {
         }
     }
 
-    const getRoomDataFetch = async () => {
+    const getRoomDataFetch = async (roomId: string, token: string) => {
         try {
-            const prepareData: any = {
-                roomId: params.roomId,
-                token: searchParams.get('token')
+            const prepareData = {
+                roomId,
+                token
             };
 
             const response = await getRoomData(prepareData);
 
-            if (response?.success && response?.data?.codeContent) {
-                const { html, css, javascript } = response.data.codeContent;
-                setHtmlCode(html);
-                setCssCode(css);
-                setJsCode(javascript);
-
-                // Update users with participants from response
-                if (response.data.participants) {
-                    const participantUsers = response.data.participants.map((participant: any) => ({
-                        id: participant.id || nanoid(),
-                        name: participant.name || participant.email,
-                        online: true // You can add online status logic here if available
-                    }));
-                    setUsers(participantUsers);
-                }
-
-                // Update room store with the fetched data
-                roomStore.setCurrentRoom({
-                    roomId: response.data.roomId,
-                    roomName: response.data.roomName,
-                    accessCode: response.data.accessCode,
-                    role: 'participant',
-                    token: prepareData.token!,
-                    codeContent: {
-                        html,
-                        css,
-                        javascript
-                    }
-                });
+            if (!response?.success || !response?.data) {
+                throw new Error('Invalid room data received');
             }
+
+            const { codeContent, participants, roomName, accessCode } = response.data;
+
+            if (codeContent) {
+                const { html, css, javascript } = codeContent;
+                setHtmlCode(html || '');
+                setCssCode(css || '');
+                setJsCode(javascript || '');
+            }
+
+            if (participants) {
+                const participantUsers = participants.map((participant: any) => ({
+                    id: participant.id || nanoid(),
+                    name: participant.name || participant.email,
+                    email: participant.email,
+                    online: true
+                }));
+                setUsers(participantUsers);
+                setUserData(response.data);
+            }
+
+            // Update room store
+            roomStore.setCurrentRoom({
+                roomId,
+                roomName,
+                accessCode,
+                role: 'participant',
+                token,
+                codeContent: codeContent || { html: '', css: '', javascript: '' }
+            });
+
+            return true;
         } catch (error) {
             toast.error('Failed to fetch room data. Please try again.');
             console.error('Error fetching room data:', error);
+            return false;
+        }
+    };
+
+    const getAllDataChats = async (roomId: string) => {
+        try {
+            const response = await getAllChats(roomId);
+
+            if (!response?.success || !Array.isArray(response.data)) {
+                throw new Error('Invalid chat data received');
+            }
+
+            const formattedChats = response.data.map((chat: any) => ({
+                id: chat.id || nanoid(),
+                sender: chat.name,
+                content: chat.message,
+                timestamp: chat.createdAt || new Date().toISOString(),
+                isSelf: chat.email === userData?.email
+            }));
+
+            setMessages(formattedChats);
+            return true;
+        } catch (error) {
+            console.error('Error fetching chat messages:', error);
+            toast.error('Failed to load chat messages');
+            return false;
         }
     };
 
     useEffect(() => {
-        const roomId = params.roomId;
-        const token = searchParams.get('token');
+        const currentRoomId = params.roomId as string;
+        const currentToken = searchParams.get('token');
 
-        if (!roomId || !token) {
+        if (!currentRoomId || !currentToken) {
             toast.error('Missing room ID or token');
             return;
         }
 
         const initializeRoom = async () => {
             try {
-                await getRoomDataFetch();
-                setRoomId(roomId as string);
-                setUsername(`User-${nanoid(4)}`);
-                connectToRoom(roomId as string);
+                setRoomId(currentRoomId);
+
+                // Fetch room data first
+                const roomDataSuccess = await getRoomDataFetch(currentRoomId, currentToken);
+                if (!roomDataSuccess) return;
+
+                // Then fetch chat data
+                const chatDataSuccess = await getAllDataChats(currentRoomId);
+                if (!chatDataSuccess) {
+                    toast.warning('Failed to load chat history');
+                }
+
+                // Set username and connect to room
+                const generatedUsername = `User-${nanoid(4)}`;
+                setUsername(generatedUsername);
+                connectToRoom(currentRoomId);
+
             } catch (error) {
                 console.error('Error initializing room:', error);
+                toast.error('Failed to initialize room');
             }
         };
 
         initializeRoom();
+
+        // Cleanup function
+        return () => {
+            setMessages([]);
+            setUsers([]);
+            setUserData(null);
+        };
     }, [params.roomId, searchParams]);
 
     // Connect to room with type annotations
@@ -364,26 +421,56 @@ export default function HomeScreen() {
     };
 
     // Send chat message
-    const sendMessage = () => {
-        if (!messageInput.trim()) return;
+    // Update the sendMessage function
+    const sendMessage = async () => {
+        if (!messageInput.trim() || isMessageSending) return;
 
-        const newMessage = {
-            id: nanoid(),
-            sender: username,
-            content: messageInput,
-            timestamp: new Date().toISOString(),
-            isSelf: true,
-        };
+        try {
+            setIsMessageSending(true);
+            const role = searchParams.get('participantRole');
+            let senderName, senderEmail;
 
-        setMessages((prev) => [...prev, newMessage]);
-        setMessageInput("");
+            if (role === 'participant') {
+                senderName = searchParams.get('participantName') || '';
+                senderEmail = searchParams.get('participantEmail') || '';
+            } else {
+                senderName = userData?.name || '';
+                senderEmail = userData?.email || '';
+            }
 
-        // Emit message to other users
-        if (isConnected) {
-            socket.current.emit("chat-message", {
-                room: roomId,
-                message: { ...newMessage, isSelf: false },
-            });
+            const messageData = {
+                roomId: roomId,
+                token: token || '',
+                name: senderName,
+                email: senderEmail,
+                message: messageInput,
+            };
+
+            const response = await sendNewMessageInGroupChatApiRequest(messageData);
+
+            if (response.success) {
+                const newMessage = {
+                    id: nanoid(),
+                    sender: senderName,
+                    content: messageInput,
+                    timestamp: new Date().toISOString(),
+                    isSelf: true,
+                };
+
+                setMessages((prev) => [...prev, newMessage]);
+                setMessageInput("");
+
+                if (isConnected) {
+                    socket.current.emit("chat-message", {
+                        room: roomId,
+                        message: { ...newMessage, isSelf: false },
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Error in sendMessage:', error);
+        } finally {
+            setIsMessageSending(false);
         }
     };
 
@@ -449,11 +536,11 @@ export default function HomeScreen() {
     // Render Chat Sidebar
     const renderChatSidebar = () => {
         return (
-            <div className="flex flex-col h-full border-l dark:border-gray-800">
-                <Tabs defaultValue="chat" className="flex flex-col h-full">
-                    <div className="p-4 border-b dark:border-gray-800">
-                        <TabsList className="w-full">
-                            <TabsTrigger value="chat" className="flex-1">
+            <div className="flex flex-col h-full border-2  relative z-50">
+                <Tabs defaultValue="chat" className="flex flex-col h-full bg-white">
+                    <div className="p-4 border-b-2  relative z-40">
+                        <TabsList className="w-full border ">
+                            <TabsTrigger value="chat" className="flex-1 border-r ">
                                 <MessageSquare className="w-4 h-4 mr-2" />
                                 Chat
                             </TabsTrigger>
@@ -465,9 +552,9 @@ export default function HomeScreen() {
                     </div>
 
                     <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
-                        <ChatMessages messages={messages} />
+                        <ChatMessages messages={messages} userData={userData} />
 
-                        <div className="p-4 border-t dark:border-gray-800">
+                        <div className="p-4 border-t-2  bg-white relative z-40">
                             <form
                                 onSubmit={(e) => {
                                     e.preventDefault();
@@ -479,18 +566,25 @@ export default function HomeScreen() {
                                     value={messageInput}
                                     onChange={(e) => setMessageInput(e.target.value)}
                                     placeholder="Type a message..."
-                                    className="flex-grow"
+                                    className="flex-grow "
+                                    disabled={isMessageSending}
                                 />
-                                <Button type="submit" size="sm">
-                                    Send
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={isMessageSending || !messageInput.trim()}
+                                    className="border "
+                                >
+                                    {isMessageSending ? "Sending..." : "Send"}
                                 </Button>
                             </form>
                         </div>
                     </TabsContent>
 
                     <TabsContent value="users" className="p-0 m-0 h-full">
-                        <ScrollArea className="h-full p-4">
+                        <ScrollArea className="h-full p-4 border ">
                             <div className="space-y-4">
+                                <Separator className="" />
                                 {/*   <div>
                                     <h3 className="text-sm font-medium mb-2">Your details</h3>
                                     <div className="flex items-center space-x-2">
@@ -511,19 +605,21 @@ export default function HomeScreen() {
                                 <div>
                                     <h3 className="text-sm font-medium mb-2">Room Participants</h3>
                                     <div className="space-y-2">
-                                        {users.map((user) => (
-                                            <div key={user.id} className="flex items-center space-x-2">
-                                                <Avatar className="h-8 w-8">
-                                                    <AvatarFallback>
-                                                        {user.name?.charAt(0) || 'Admin'}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-medium">{user.name}</span>
-                                                    <span className="text-xs text-muted-foreground">{user.email}</span>
+                                        {users
+                                            .filter(user => user.name !== "Host")
+                                            .map((user) => (
+                                                <div key={user.id} className="flex items-center space-x-2">
+                                                    <Avatar className="h-8 w-8">
+                                                        <AvatarFallback>
+                                                            {user.name?.charAt(0) || 'Admin'}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-medium">{user.name}</span>
+                                                        <span className="text-xs text-muted-foreground">{user.email}</span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))}
                                     </div>
                                 </div>
 
@@ -556,7 +652,7 @@ export default function HomeScreen() {
     return (
         <TooltipProvider>
             {isParticipant && <ParticipantForm token={token} roomId={roomId} />}
-            <div className="flex h-screen overflow-hidden bg-background mb-20">
+            <div className="flex overflow-hidden bg-background ">
                 {/* Main Content */}
                 <div className={`flex-grow flex flex-col ${!isFullScreen ? "lg:mr-[320px]" : ""}`}>
                     {/* Top Toolbar - Pass handleSaveChanges to ToolBar */}

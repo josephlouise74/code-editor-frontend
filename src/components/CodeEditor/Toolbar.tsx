@@ -134,7 +134,7 @@ export default function ToolBar({
                             </TooltipContent>
                         </Tooltip>
                     </div>
-                    <Tooltip>
+                    {/*   <Tooltip>
                         <TooltipTrigger asChild>
                             <Button onClick={saveAndRunCode} variant="default" size="sm" className="h-8">
                                 <Play size={16} className="mr-1" />
@@ -144,7 +144,7 @@ export default function ToolBar({
                         <TooltipContent>
                             <p>Save & Run</p>
                         </TooltipContent>
-                    </Tooltip>
+                    </Tooltip> */}
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button onClick={handleShareRoom} variant="outline" size="sm" className="h-8">

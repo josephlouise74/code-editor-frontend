@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { toast } from 'react-toastify';
 
 interface CreateRoomData {
@@ -6,6 +6,8 @@ interface CreateRoomData {
     password: string;
     email: string;
 }
+
+const baseUrl = "https://code-editor-backend-jqof.onrender.com/api/v1";
 
 const handleError = (error: any) => {
     const message = error.response?.data?.message || 'An error occurred';
@@ -16,7 +18,7 @@ const handleError = (error: any) => {
 export const createRoomApi = async (data: CreateRoomData) => {
     try {
         const response = await axios.post(
-            'http://localhost:7400/api/v1/room/create',
+            `${baseUrl}/room/create`,
             data,
             {
                 headers: {
@@ -28,16 +30,20 @@ export const createRoomApi = async (data: CreateRoomData) => {
         toast.success('Room created successfully!');
         return response.data;
     } catch (error) {
-        console.log("error", error)
-        handleError(error);
+        handleError(error as AxiosError);
     }
 };
 
+interface JoinRoomData {
+    roomId: string;
+    password: string;
+    email: string;
+}
 
-export const joinRoomApi = async (data: any) => {
+export const joinRoomApi = async (data: JoinRoomData) => {
     try {
         const response = await axios.post(
-            'http://localhost:7400/api/v1/room/join',
+            `${baseUrl}/room/join`,
             data,
             {
                 headers: {
@@ -46,16 +52,14 @@ export const joinRoomApi = async (data: any) => {
             }
         );
 
-        toast.success('Successfully joined the room!'); // Updated success message
+        toast.success('Successfully joined the room!');
         return response.data;
     } catch (error) {
-        console.log("error", error)
-        handleError(error);
+        handleError(error as AxiosError);
     }
 };
 
-
-export const updateSaveChangesCodeApi = async (data: {
+interface UpdateCodeData {
     roomId: string;
     roomName: string;
     accessCode: string;
@@ -66,34 +70,28 @@ export const updateSaveChangesCodeApi = async (data: {
         javascript: string;
     };
     token: string;
-}) => {
+}
+
+export const updateSaveChangesCodeApi = async (data: UpdateCodeData) => {
     try {
-        console.log("data", data)
         const response = await axios.patch(
-            'http://localhost:7400/api/v1/room/update-code', // Fixed endpoint URL
+            `${baseUrl}/room/update-code`,
             data,
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${data.token}` // Added token to headers
+                    'Authorization': `Bearer ${data.token}`
                 },
             }
         );
 
         if (response.data.success) {
-            toast.success('Changes saved successfully!'); // Updated success message
+            toast.success('Changes saved successfully!');
         }
 
         return response.data;
     } catch (error) {
-        console.error("Error updating code:", error);
-        if (axios.isAxiosError(error)) {
-            const message = error.response?.data?.message || 'Failed to update code';
-            toast.error(message);
-        } else {
-            toast.error('An unexpected error occurred');
-        }
-        throw error;
+        handleError(error as AxiosError);
     }
 };
 
@@ -120,7 +118,7 @@ interface GetRoomDataResponse {
 export const getRoomData = async (data: { roomId: string; token: string }): Promise<GetRoomDataResponse> => {
     try {
         const response = await axios.get(
-            `http://localhost:7400/api/v1/room/get-room-data/${data.roomId}/${data.token}`,
+            `${baseUrl}/room/get-room-data/${data.roomId}/${data.token}`,
             {
                 headers: {
                     'Authorization': `Bearer ${data.token}`
@@ -134,30 +132,15 @@ export const getRoomData = async (data: { roomId: string; token: string }): Prom
 
         return response.data;
     } catch (error) {
-        console.error("Error fetching room data:", error);
-        if (axios.isAxiosError(error)) {
-            const message = error.response?.data?.message || 'Failed to fetch room data';
-            toast.error(message);
-        } else {
-            toast.error('An unexpected error occurred');
-        }
+        handleError(error as AxiosError);
         throw error;
     }
 };
 
-
-interface ParticipantData {
-    email: string;
-    name: string;
-    role: string;
-    token: string;
-    roomId: string;
-}
-
-export const joinParticipantInRoomApiRequest = async (data: ParticipantData) => {
+export const joinParticipantInRoomApiRequest = async (data: any) => {
     try {
         const response = await axios.post(
-            'http://localhost:7400/api/v1/room/join-participant',
+            `${baseUrl}/room/join-participant`,
             data,
             {
                 headers: {
@@ -173,13 +156,53 @@ export const joinParticipantInRoomApiRequest = async (data: ParticipantData) => 
 
         return response.data;
     } catch (error) {
-        console.error("Error joining as participant:", error);
-        if (axios.isAxiosError(error)) {
-            const message = error.response?.data?.message || 'Failed to join as participant';
-            toast.error(message);
-        } else {
-            toast.error('An unexpected error occurred');
+        handleError(error as AxiosError);
+    }
+};
+
+interface ChatMessageData {
+    roomId: string;
+    token: string;
+    name: string;
+    email: string;
+    message: string;
+}
+
+export const sendNewMessageInGroupChatApiRequest = async (data: ChatMessageData) => {
+    try {
+        const response = await axios.post(
+            `${baseUrl}/room/send-message`,
+            data,
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${data.token}`
+                },
+            }
+        );
+
+        if (response.data.success) {
+            toast.success('Message sent successfully!');
         }
-        throw error;
+
+        return response.data;
+    } catch (error) {
+        handleError(error as AxiosError);
+    }
+};
+
+export const getAllChats = async (roomId: string) => {
+    try {
+        const response = await axios.get(
+            `${baseUrl}/room/get-all-chats/${roomId}`
+        );
+
+        if (!response.data.success) {
+            throw new Error(response.data.message || 'Failed to fetch chat data');
+        }
+
+        return response.data;
+    } catch (error) {
+        handleError(error as AxiosError);
     }
 };

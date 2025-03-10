@@ -50,22 +50,34 @@ export function ParticipantForm({ token, roomId }: any) {
     const onSubmit = async (data: ParticipantFormValues) => {
         try {
             setIsSubmitting(true);
+            console.log('Form Data:', data);
 
             const prepareData = {
                 ...data,
                 token,
                 roomId
             };
+            console.log('Prepared Data:', prepareData);
 
             // Call the API to join as participant
-            await joinParticipantInRoomApiRequest(prepareData);
-
+            const response = await joinParticipantInRoomApiRequest(prepareData);
+            console.log('API call successful');
+            console.log("response", response)
             // Get current URL and params
             const currentParams = new URLSearchParams(searchParams.toString());
+            console.log('Current params before modification:', currentParams.toString());
+
             currentParams.delete("participant"); // Remove participant param
 
-            // Construct new URL without participant param
+            // Add new participant details to params
+            currentParams.set("participantName", data.name);
+            currentParams.set("participantEmail", data.email);
+            currentParams.set("participantRole", "participant");
+            console.log('Updated params:', currentParams.toString());
+
+            // Construct new URL with participant details
             const newUrl = `${window.location.pathname}?${currentParams.toString()}`;
+            console.log('New URL:', newUrl);
 
             // Show success message
             toast.success(`Welcome ${data.name}! You have successfully joined the room.`, {
@@ -79,13 +91,12 @@ export function ParticipantForm({ token, roomId }: any) {
             // Navigate to new URL
             router.push(newUrl);
         } catch (error) {
+            console.error('Error details:', error);
             toast.error("Failed to join as participant");
-            console.error(error);
         } finally {
             setIsSubmitting(false);
         }
     };
-
     return (
         <Dialog open={true} onOpenChange={() => { }} modal={true}>
             <DialogContent className="sm:max-w-[425px]" onPointerDownOutside={(e) => e.preventDefault()}>
