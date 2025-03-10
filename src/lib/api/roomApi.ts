@@ -9,6 +9,9 @@ interface CreateRoomData {
 
 const baseUrl = "https://code-editor-backend-jqof.onrender.com/api/v1";
 
+/* const baseUrl = "http://localhost:7400/api/v1"; */
+/* const baseUrl = "https://code-editor-backend-jqof.onrender.com/api/v1"; */
+
 const handleError = (error: any) => {
     const message = error.response?.data?.message || 'An error occurred';
     toast.error(message);
