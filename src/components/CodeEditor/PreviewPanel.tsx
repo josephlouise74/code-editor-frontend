@@ -1,17 +1,25 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, RefObject } from "react";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger
+} from "@/components/ui/tooltip";
 import { Eye, Terminal, RefreshCw, Maximize, Minimize } from "lucide-react";
+
+interface PreviewPanelProps {
+    iframeRef: RefObject<HTMLIFrameElement>;
+    srcDoc: string;
+    showConsole: boolean;
+    setShowConsole: (show: boolean) => void;
+    saveAndRunCode: () => void;
+}
 
 /**
  * Preview panel component
  * 
- * @param {Object} props - Component props
- * @param {Object} props.iframeRef - Reference to the iframe
- * @param {string} props.srcDoc - Source document for the iframe
- * @param {boolean} props.showConsole - Whether to show console
- * @param {Function} props.setShowConsole - Toggle console visibility
- * @param {Function} props.saveAndRunCode - Save and run code
+ * @param props Component props
  */
 export default function PreviewPanel({
     iframeRef,
@@ -19,7 +27,7 @@ export default function PreviewPanel({
     showConsole,
     setShowConsole,
     saveAndRunCode,
-}: any) {
+}: PreviewPanelProps) {
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     const toggleFullscreen = () => {
@@ -49,7 +57,7 @@ export default function PreviewPanel({
     };
 
     // Listen for fullscreen change events
-    React.useEffect(() => {
+    useEffect(() => {
         const handleFullscreenChange = () => {
             setIsFullscreen(!!document.fullscreenElement);
         };
@@ -68,55 +76,76 @@ export default function PreviewPanel({
     }, []);
 
     return (
-        <>
-            <div id="preview-container" className="flex flex-col h-full">
-                <div className="flex items-center justify-between p-2   0 border-b">
-                    <h2 className="text-sm font-medium">Preview</h2>
-                    <div className="flex items-center space-x-1">
-                        <Tooltip content="Refresh">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={saveAndRunCode}
-                                className="h-7 w-7 p-0"
-                            >
-                                <RefreshCw className="h-4 w-4" />
-                            </Button>
+        <div id="preview-container" className="flex flex-col h-full">
+            <div className="flex items-center justify-between p-2 border-b">
+                <h2 className="text-sm font-medium">Preview</h2>
+                <div className="flex items-center space-x-1">
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={saveAndRunCode}
+                                    className="h-7 w-7 p-0"
+                                >
+                                    <RefreshCw className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Refresh</p>
+                            </TooltipContent>
                         </Tooltip>
-                        <Tooltip content="Toggle console">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setShowConsole(!showConsole)}
-                                className="h-7 w-7 p-0"
-                            >
-                                <Terminal className="h-4 w-4" />
-                            </Button>
+                    </TooltipProvider>
+
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowConsole(!showConsole)}
+                                    className="h-7 w-7 p-0"
+                                >
+                                    <Terminal className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Toggle console</p>
+                            </TooltipContent>
                         </Tooltip>
-                        <Tooltip content={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={toggleFullscreen}
-                                className="h-7 w-7 p-0"
-                            >
-                                {isFullscreen ?
-                                    <Minimize className="h-4 w-4" /> :
-                                    <Maximize className="h-4 w-4" />}
-                            </Button>
+                    </TooltipProvider>
+
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={toggleFullscreen}
+                                    className="h-7 w-7 p-0"
+                                >
+                                    {isFullscreen ?
+                                        <Minimize className="h-4 w-4" /> :
+                                        <Maximize className="h-4 w-4" />}
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>{isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}</p>
+                            </TooltipContent>
                         </Tooltip>
-                    </div>
-                </div>
-                <div className="flex-grow">
-                    <iframe
-                        ref={iframeRef}
-                        srcDoc={srcDoc}
-                        title="preview"
-                        className="w-full h-full border-0"
-                        sandbox="allow-scripts allow-modals"
-                    />
+                    </TooltipProvider>
                 </div>
             </div>
-        </>
+            <div className="flex-grow">
+                <iframe
+                    ref={iframeRef}
+                    srcDoc={srcDoc}
+                    title="preview"
+                    className="w-full h-full border-0"
+                    sandbox="allow-scripts allow-modals"
+                />
+            </div>
+        </div>
     );
 }
