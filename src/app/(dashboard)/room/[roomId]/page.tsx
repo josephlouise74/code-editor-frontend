@@ -93,7 +93,7 @@ export default function HomeScreen() {
     const [showConsole, setShowConsole] = useState<boolean>(true);
     // Add this with other state declarations
     const [isMessageSending, setIsMessageSending] = useState<boolean>(false);
-    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
     const socket = useRef<typeof mockSocket>(mockSocket);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
     // Get roomId and token from URL parameters
