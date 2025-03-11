@@ -6,7 +6,7 @@ import {
     TooltipProvider,
     TooltipTrigger
 } from "@/components/ui/tooltip";
-import { Eye, Terminal, RefreshCw, Maximize, Minimize } from "lucide-react";
+import { Eye, Terminal, RefreshCw, Maximize, Minimize, Trash } from "lucide-react";
 
 interface PreviewPanelProps {
     iframeRef: RefObject<HTMLIFrameElement>;
@@ -16,35 +16,39 @@ interface PreviewPanelProps {
     saveAndRunCode: () => void;
 }
 
-/**
- * Preview panel component
- * 
- * @param props Component props
- */
 export default function PreviewPanel({
     iframeRef,
     srcDoc,
     showConsole,
     setShowConsole,
     saveAndRunCode,
-}: any) {
+}: PreviewPanelProps) {
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [previousCode, setPreviousCode] = useState(srcDoc);
+
+    useEffect(() => {
+        if (srcDoc !== previousCode) {
+            const iframe = iframeRef.current;
+            if (iframe) {
+                iframe.srcdoc = srcDoc;
+                setPreviousCode(srcDoc);
+            }
+        }
+    }, [srcDoc, previousCode]);
 
     const toggleFullscreen = () => {
+        const previewContainer = document.getElementById('preview-container');
+        if (!previewContainer) return;
+
         if (!isFullscreen) {
-            // Enter fullscreen
-            const previewContainer = document.getElementById('preview-container');
-            if (previewContainer) {
-                if (previewContainer.requestFullscreen) {
-                    previewContainer.requestFullscreen();
-                } else if ((previewContainer as any).webkitRequestFullscreen) {
-                    (previewContainer as any).webkitRequestFullscreen();
-                } else if ((previewContainer as any).msRequestFullscreen) {
-                    (previewContainer as any).msRequestFullscreen();
-                }
+            if (previewContainer.requestFullscreen) {
+                previewContainer.requestFullscreen();
+            } else if ((previewContainer as any).webkitRequestFullscreen) {
+                (previewContainer as any).webkitRequestFullscreen();
+            } else if ((previewContainer as any).msRequestFullscreen) {
+                (previewContainer as any).msRequestFullscreen();
             }
         } else {
-            // Exit fullscreen
             if (document.exitFullscreen) {
                 document.exitFullscreen();
             } else if ((document as any).webkitExitFullscreen) {
@@ -53,33 +57,39 @@ export default function PreviewPanel({
                 (document as any).msExitFullscreen();
             }
         }
-        setIsFullscreen(!isFullscreen);
     };
 
-    // Listen for fullscreen change events
     useEffect(() => {
         const handleFullscreenChange = () => {
             setIsFullscreen(!!document.fullscreenElement);
         };
 
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
-        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+        const events = [
+            'fullscreenchange',
+            'webkitfullscreenchange',
+            'mozfullscreenchange',
+            'MSFullscreenChange'
+        ];
+
+        events.forEach(event => {
+            document.addEventListener(event, handleFullscreenChange);
+        });
 
         return () => {
-            document.removeEventListener('fullscreenchange', handleFullscreenChange);
-            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-            document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-            document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+            events.forEach(event => {
+                document.removeEventListener(event, handleFullscreenChange);
+            });
         };
     }, []);
 
     return (
-        <div id="preview-container" className="flex flex-col h-full">
+        <div id="preview-container" className="flex flex-col h-full bg-background">
             <div className="flex items-center justify-between p-2 border-b">
-                <h2 className="text-sm font-medium">Preview</h2>
-                <div className="flex items-center space-x-1">
+                <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Eye className="h-4 w-4" />
+                    Preview
+                </h2>
+                <div className="flex items-center space-x-2">
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -87,13 +97,13 @@ export default function PreviewPanel({
                                     variant="ghost"
                                     size="sm"
                                     onClick={saveAndRunCode}
-                                    className="h-7 w-7 p-0"
+                                    className="h-7 w-7 p-0 hover:bg-accent"
                                 >
                                     <RefreshCw className="h-4 w-4" />
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Refresh</p>
+                            <TooltipContent side="bottom">
+                                <p>Run Code</p>
                             </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
@@ -105,13 +115,13 @@ export default function PreviewPanel({
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setShowConsole(!showConsole)}
-                                    className="h-7 w-7 p-0"
+                                    className="h-7 w-7 p-0 hover:bg-accent"
                                 >
                                     <Terminal className="h-4 w-4" />
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Toggle console</p>
+                            <TooltipContent side="bottom">
+                                <p>Toggle Console</p>
                             </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
@@ -123,27 +133,28 @@ export default function PreviewPanel({
                                     variant="ghost"
                                     size="sm"
                                     onClick={toggleFullscreen}
-                                    className="h-7 w-7 p-0"
+                                    className="h-7 w-7 p-0 hover:bg-accent"
                                 >
                                     {isFullscreen ?
                                         <Minimize className="h-4 w-4" /> :
-                                        <Maximize className="h-4 w-4" />}
+                                        <Maximize className="h-4 w-4" />
+                                    }
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent>
-                                <p>{isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}</p>
+                            <TooltipContent side="bottom">
+                                <p>{isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}</p>
                             </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
                 </div>
             </div>
-            <div className="flex-grow">
+            <div className="flex-grow relative">
                 <iframe
                     ref={iframeRef}
                     srcDoc={srcDoc}
                     title="preview"
-                    className="w-full h-full border-0"
-                    sandbox="allow-scripts allow-modals"
+                    className="w-full h-full border-0 bg-white"
+                    sandbox="allow-scripts allow-modals allow-forms"
                 />
             </div>
         </div>
