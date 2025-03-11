@@ -22,7 +22,7 @@ export default function PreviewPanel({
     showConsole,
     setShowConsole,
     saveAndRunCode,
-}: PreviewPanelProps) {
+}: any) {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [previousCode, setPreviousCode] = useState(srcDoc);
 
