@@ -46,7 +46,6 @@ export function ParticipantForm({ token, roomId }: any) {
             role: "",
         },
     });
-
     const onSubmit = async (data: ParticipantFormValues) => {
         try {
             setIsSubmitting(true);
@@ -63,6 +62,13 @@ export function ParticipantForm({ token, roomId }: any) {
             const response = await joinParticipantInRoomApiRequest(prepareData);
             console.log('API call successful');
             console.log("response", response)
+
+            // Store participant details in localStorage
+            localStorage.setItem('participantName', data.name);
+            localStorage.setItem('participantEmail', data.email);
+            localStorage.setItem('currentUserName', data.name);
+            localStorage.setItem('currentUserEmail', data.email);
+
             // Get current URL and params
             const currentParams = new URLSearchParams(searchParams.toString());
             console.log('Current params before modification:', currentParams.toString());
@@ -73,13 +79,13 @@ export function ParticipantForm({ token, roomId }: any) {
             currentParams.set("participantName", data.name);
             currentParams.set("participantEmail", data.email);
             currentParams.set("participantRole", "participant");
+            currentParams.set("collaborator", "true"); // Add collaborator parameter
             console.log('Updated params:', currentParams.toString());
 
-            // Construct new URL with participant details
+            // Rest of the code remains the same...
             const newUrl = `${window.location.pathname}?${currentParams.toString()}`;
             console.log('New URL:', newUrl);
 
-            // Show success message
             toast.success(`Welcome ${data.name}! You have successfully joined the room.`, {
                 position: "top-right",
                 autoClose: 3000,
@@ -88,7 +94,6 @@ export function ParticipantForm({ token, roomId }: any) {
                 pauseOnHover: true,
                 draggable: true,
             });
-            // Navigate to new URL
             router.push(newUrl);
         } catch (error) {
             console.error('Error details:', error);
@@ -97,6 +102,8 @@ export function ParticipantForm({ token, roomId }: any) {
             setIsSubmitting(false);
         }
     };
+
+
     return (
         <Dialog open={true} onOpenChange={() => { }} modal={true}>
             <DialogContent className="sm:max-w-[425px]" onPointerDownOutside={(e) => e.preventDefault()}>

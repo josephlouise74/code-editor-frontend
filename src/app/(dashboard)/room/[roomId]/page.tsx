@@ -87,8 +87,6 @@ export default function HomeScreen() {
     const [users, setUsers] = useState<any[]>([]);
     const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
     const [messageInput, setMessageInput] = useState<string>("");
-    const [username, setUsername] = useState<string>("");
-    const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
     const [layout, setLayout] = useState<"split" | "editor" | "preview">("split");
     const [showConsole, setShowConsole] = useState<boolean>(true);
     // Add this with other state declarations
@@ -249,7 +247,7 @@ export default function HomeScreen() {
         const currentRoomId = params.roomId as string;
         const currentToken = searchParams.get('token');
         const host = searchParams.get('host');
-        console.log("hosth", host)
+        console.log("host", host)
         if (!currentRoomId || !currentToken) {
             toast.error('Missing room ID or token');
             return;
@@ -272,7 +270,7 @@ export default function HomeScreen() {
 
                 // Set username and connect to room
                 const generatedUsername = `User-${nanoid(4)}`;
-                setUsername(generatedUsername);
+                console.log("userssss2", users)
                 connectToRoom(currentRoomId);
                 fetchHistory()
                 // Fetch and store history data
@@ -384,7 +382,7 @@ export default function HomeScreen() {
         const id = params.roomId as string;
         if (id) {
             setRoomId(id);
-            setUsername(`User-${nanoid(4)}`);
+
             connectToRoom(id);
         }
 
@@ -588,6 +586,11 @@ export default function HomeScreen() {
         try {
             setIsSaving(true);
             const roomDetails = roomStore.currentRoomDetails;
+            const searchParams = new URLSearchParams(window.location.search);
+            const isCollaborator = searchParams.get('collaborator') === 'true';
+            const participantName = searchParams.get('participantName');
+            const participantEmail = searchParams.get('participantEmail');
+
 
             const updateData: any = {
                 roomId: roomDetails.roomId,
@@ -600,10 +603,20 @@ export default function HomeScreen() {
                     javascript: jsCode
                 },
                 token: roomStore.token,
-                userData,
-
+                collaborator: isCollaborator,
+                participantName: isCollaborator
+                    ? searchParams.get('participantName')
+                    : searchParams.get('host'),
+                participantEmail: isCollaborator
+                    ? searchParams.get('participantEmail')
+                    : searchParams.get('adminEmail'),
+                userData: {
+                    ...userData,
+                },
             };
 
+
+            console.log("updated", updateData)
             const response = await updateSaveChangesCodeApi(updateData);
 
             if (response.success) {
@@ -769,8 +782,9 @@ export default function HomeScreen() {
 
                     {/* Add the HistoryTracker */}
                     {showHistory && (
-                        <div className="fixed right-[320px] top-16 bottom-0 w-[400px] border-l bg-background p-4 overflow-auto">
+                        <div className="fixed right-[320px] top-16 bottom-0 w-[400px] border-l bg-background p-4 overflow-auto z-[60]">
                             <HistoryTracker
+                                fetchHistory={fetchHistory}
                                 historyData={codeHistory}
                                 onRestoreVersion={handleRestoreVersion}
                                 onPreviewVersion={handlePreviewVersion}
@@ -779,7 +793,6 @@ export default function HomeScreen() {
                             />
                         </div>
                     )}
-
 
                     {/* Notification Banners */}
                     <div className="space-y-2 mx-4 my-2">
@@ -808,6 +821,34 @@ export default function HomeScreen() {
                                             <TabsTrigger value="css">CSS</TabsTrigger>
                                             <TabsTrigger value="js">JavaScript</TabsTrigger>
                                         </TabsList>
+
+
+                                        <div className="mb-4">
+                                            <ScrollArea className="w-full">
+                                                <div className="flex space-x-2 p-2">
+                                                    {messages
+                                                        .filter((msg, index, self) =>
+                                                            index === self.findIndex(m => m.email === msg.email)
+                                                        )
+                                                        .map((participant) => (
+                                                            <Tooltip key={participant.email}>
+                                                                <TooltipTrigger>
+                                                                    <Avatar className="h-8 w-8 cursor-pointer hover:ring-2 hover:ring-primary transition-all">
+                                                                        <AvatarFallback className="bg-primary/10 text-primary">
+                                                                            {participant.name?.charAt(0)?.toUpperCase() || '?'}
+                                                                        </AvatarFallback>
+                                                                    </Avatar>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent side="bottom" align="center" className="flex flex-col items-center">
+                                                                    <p className="font-medium">{participant.name}</p>
+                                                                    <p className="text-xs text-muted-foreground">{participant.email}</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        ))}
+                                                </div>
+                                            </ScrollArea>
+                                        </div>
+
 
                                         <TabsContent value="html" className="m-0 h-full">
                                             <Card className="h-full border-0 shadow-none">
@@ -871,8 +912,8 @@ export default function HomeScreen() {
 
                                 {/* Console Output */}
                                 {showConsole && (
-                                    <div className="h-2/5 border-t dark:border-gray-800">
-                                        <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800">
+                                    <div className="h-2/5 border-t dark:border-gray-800 relative z-[1]">
+                                        <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800 relative z-[2]">
                                             <div className="text-sm font-medium flex items-center">
                                                 <Terminal size={14} className="mr-2" /> Console
                                             </div>
@@ -889,7 +930,7 @@ export default function HomeScreen() {
                                                 </Tooltip>
                                             </div>
                                         </div>
-                                        <ScrollArea className="h-full bg-black text-white p-2 font-mono text-sm">
+                                        <ScrollArea className="h-full bg-black text-white p-2 font-mono text-sm relative z-[1]">
                                             {consoleLogs.length === 0 ? (
                                                 <div className="text-gray-500 italic p-2">No console output yet. Run your code to see logs here.</div>
                                             ) : (

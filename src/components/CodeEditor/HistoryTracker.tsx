@@ -2,7 +2,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { format } from "date-fns";
-import { History, RotateCcw, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { History, RotateCcw, Eye, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import {
     Tooltip,
     TooltipContent,
@@ -17,8 +17,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { User, Clock } from "lucide-react"; // Add these imports
+import { toast } from "react-toastify";
 
 interface CodeContent {
     css: string;
@@ -37,14 +38,17 @@ interface UserData {
     version: number;
 }
 
+// Update the HistoryData interface
 interface HistoryData {
     accessCode: string;
     codeContent: CodeContent;
     modifiedBy: string;
+    participantName?: string;
+    participantEmail?: string;
     roomName: string;
     timestamp: Date;
     version: number;
-    userData: UserData; // Add this field
+    userData: UserData;
 }
 
 interface PaginationMeta {
@@ -98,15 +102,30 @@ export function HistoryTracker({
     onPreviewVersion,
     onPageChange,
     onLimitChange,
-    onInitialLoad
-}: HistoryTrackerProps) {
+    onInitialLoad,
+    fetchHistory
+}: any) {
     const history = historyData?.history || [];
     const pagination = historyData?.pagination || defaultPagination;
     const itemsPerPageOptions = [5, 10, 15, 20];
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const refreshData = async () => {
+        try {
+            setIsRefreshing(true);
+            await fetchHistory();
+        } catch (error) {
+            console.error('Error refreshing history:', error);
+            toast.error('Failed to refresh history');
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     useEffect(() => {
         if (onInitialLoad) {
             onInitialLoad();
+            fetchHistory();
         }
         console.log("history", history)
     }, []);
@@ -121,36 +140,37 @@ export function HistoryTracker({
         );
     }
 
+    // Update the card return statement
     return (
-        <Card className="w-full max-w-[300px] shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 sticky top-0 bg-background z-50 border-b">
+        <Card className="w-full max-w-[300px] shadow-lg relative z-[100]">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 sticky top-0 bg-background z-[101] border-b">
                 <CardTitle className="text-sm font-medium flex items-center">
                     <History className="w-4 h-4 mr-2" />
-                    History
+                    History ({pagination.totalItems || 0})
                 </CardTitle>
-                <Badge variant="secondary" className="text-xs">
-                    {pagination.totalItems || 0}
-                </Badge>
+                <div className="flex items-center gap-2">
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7"
+                                    onClick={refreshData}
+                                    disabled={isRefreshing}
+                                >
+                                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left" className="text-xs">
+                                Refresh History
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
             </CardHeader>
 
-            <div className="px-4 py-2 border-b">
-                <Select
-                    value={pagination.itemsPerPage?.toString()}
-                    onValueChange={(value) => onLimitChange(Number(value))}
-                >
-                    <SelectTrigger className="w-full h-8 text-xs">
-                        <SelectValue placeholder="Items per page" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {itemsPerPageOptions.map((option) => (
-                            <SelectItem key={option} value={option.toString()}>
-                                {option} per page
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
-
+            {/* Update the history item card */}
             <CardContent className="p-0">
                 <ScrollArea className="h-[400px]">
                     <div className="space-y-2 p-4">
@@ -159,21 +179,24 @@ export function HistoryTracker({
                                 No history records found
                             </div>
                         ) : (
-                            history.map((version) => (
+                            history.map((version: any) => (
                                 <Card key={version.version} className="p-3 relative hover:bg-accent/50 transition-colors">
                                     <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div>
+                                        <div className="flex-1">
                                             <div className="flex items-center gap-1.5 mb-1">
                                                 <Badge variant="outline" className="text-[10px]">
                                                     v{version.version}
                                                 </Badge>
-                                                <span className="text-[10px] text-muted-foreground">
-                                                    {version.modifiedBy || 'Unknown'}
+                                                <span className="text-[10px] text-muted-foreground line-clamp-1">
+                                                    {version.participantName || version.modifiedBy || 'Unknown'}
                                                 </span>
                                             </div>
                                             <div className="flex items-center text-[10px] text-muted-foreground">
                                                 <Clock className="h-3 w-3 mr-1" />
                                                 {format(new Date(version.timestamp), "MMM d, h:mm a")}
+                                            </div>
+                                            <div className="text-[10px] text-muted-foreground mt-1 line-clamp-1">
+                                                {version.participantEmail || 'No email'}
                                             </div>
                                         </div>
                                         <div className="flex gap-0.5">
@@ -230,30 +253,42 @@ export function HistoryTracker({
                 </ScrollArea>
             </CardContent>
 
-            <CardFooter className="flex items-center justify-between py-2 px-4 border-t">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => pagination.prevPage && onPageChange(pagination.prevPage)}
-                    disabled={!pagination.hasPrevPage}
-                >
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Prev
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                    {pagination.currentPage}/{pagination.totalPages}
-                </span>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => pagination.nextPage && onPageChange(pagination.nextPage)}
-                    disabled={!pagination.hasNextPage}
-                >
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
+            <CardFooter className="flex items-center justify-between py-2 px-4 border-t sticky bottom-0 bg-background z-[101]">
+                <div className="flex items-center gap-2 w-full">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => pagination.prevPage && onPageChange(pagination.prevPage)}
+                        disabled={!pagination.hasPrevPage}
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Select
+                        value={pagination.itemsPerPage?.toString()}
+                        onValueChange={(value) => onLimitChange(Number(value))}
+                    >
+                        <SelectTrigger className="h-8 flex-1 text-xs">
+                            <SelectValue placeholder="Per page" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {itemsPerPageOptions.map((option) => (
+                                <SelectItem key={option} value={option.toString()}>
+                                    {option} per page
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => pagination.nextPage && onPageChange(pagination.nextPage)}
+                        disabled={!pagination.hasNextPage}
+                    >
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                </div>
             </CardFooter>
         </Card>
     );

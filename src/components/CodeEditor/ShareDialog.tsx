@@ -21,8 +21,10 @@ export function ShareDialog({ isOpen, onClose, roomId, token }: ShareDialogProps
         const url = new URL(`${baseUrl}/room/${roomId}`);
         url.searchParams.set('token', token);
         url.searchParams.set('participant', 'true');
+        url.searchParams.set('collaborator', 'true');
         return url.toString();
     }, [roomId, token]);
+
 
     const handleCopy = async () => {
         try {

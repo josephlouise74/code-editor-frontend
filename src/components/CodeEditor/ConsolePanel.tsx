@@ -6,9 +6,9 @@ import { Terminal, Trash } from "lucide-react";
 
 export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogClass }: any) {
     return (
-        <ScrollArea className="h-[500px] w-full">
+        <ScrollArea className="h-[600px] w-full">
             <div className="border-t dark:border-gray-800">
-                <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800 sticky top-0 z-10">
+                <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800 sticky top-0 z-[5]">
                     <div className="text-sm font-medium flex items-center">
                         <Terminal size={14} className="mr-2" /> Console
                     </div>
@@ -32,7 +32,7 @@ export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogC
                         </TooltipProvider>
                     </div>
                 </div>
-                <div className="bg-black text-white p-2 font-mono text-sm min-h-[400px]">
+                <div className="bg-black text-white p-2 font-mono text-sm min-h-[500px]">
                     {consoleLogs.length === 0 ? (
                         <div className="text-gray-500 italic p-2">
                             No console output yet. Run your code to see logs here.

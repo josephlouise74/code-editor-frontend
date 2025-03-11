@@ -73,13 +73,16 @@ const JoinRoomForm = observer(() => {
     };
 
 
+
     const onSubmit = async (data: JoinRoomFormValues) => {
         try {
             const response = await roomStore.joinRoom(data);
+            console.log("tanginga", response)
             if (response && response.roomId) {
                 form.reset();
-                // Using proper query parameter format with &
-                router.push(`/room/${response.roomId}?token=${encodeURIComponent(response.token)}`);
+                // Store host value in localStorage
+                localStorage.setItem('host', 'Host');
+                router.push(`/room/${response.roomId}?token=${encodeURIComponent(response.token)}&host=${encodeURIComponent('Host')}&adminEmail=${encodeURIComponent(response.email)}&collaborator=false`);
             }
         } catch (error) {
             console.error("Failed to join room:", error);

@@ -191,16 +191,17 @@ export default function ToolBar({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
                                 onClick={() => setShowHistory(!showHistory)}
-                                className={cn(showHistory && "bg-muted")}
+                                className={cn("h-8", showHistory && "bg-accent")}
                             >
-                                <History className="h-4 w-4" />
+                                <History className="h-4 w-4 mr-1" />
+                                <span className="hidden md:inline">History</span>
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                            <p>{isFullScreen ? "Exit Fullscreen" : "Fullscreen"}</p>
+                            <p>{showHistory ? "Hide History" : "Show History"}</p>
                         </TooltipContent>
                     </Tooltip>
 
