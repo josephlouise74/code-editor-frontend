@@ -78,7 +78,7 @@ const JoinRoomForm = observer(() => {
             if (response && response.roomId) {
                 form.reset();
                 // Using proper query parameter format with &
-                router.push(`/room/${response.roomId}?token=${encodeURIComponent(response.token)}`);
+                router.push(`/room/${response.roomId}?token=${encodeURIComponent(response.token)}&host=Host`);
             }
         } catch (error) {
             console.error("Failed to join room:", error);

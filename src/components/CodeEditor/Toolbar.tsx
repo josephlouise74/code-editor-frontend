@@ -14,8 +14,10 @@ import {
     LayoutGrid,
     X,
     Loader2,
+    History,
 } from "lucide-react";
 import { ShareDialog } from "./ShareDialog";
+import { cn } from "@/lib/utils";
 
 
 
@@ -48,6 +50,9 @@ interface ToolBarProps {
     setCopied: () => void,
     handleSaveChanges: () => void;
     isSaving: boolean;
+    // ... existing props
+    showHistory: boolean;
+    setShowHistory: (show: boolean) => void;
 }
 
 export default function ToolBar({
@@ -59,7 +64,8 @@ export default function ToolBar({
     setIsFullScreen,
     setLayout,
     saveAndRunCode,
-
+    showHistory,
+    setShowHistory,
     setCopied,
     handleSaveChanges,
     isSaving,
@@ -182,7 +188,21 @@ export default function ToolBar({
                             <p>{isFullScreen ? "Exit Fullscreen" : "Fullscreen"}</p>
                         </TooltipContent>
                     </Tooltip>
-
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowHistory(!showHistory)}
+                                className={cn(showHistory && "bg-muted")}
+                            >
+                                <History className="h-4 w-4" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p>{isFullScreen ? "Exit Fullscreen" : "Fullscreen"}</p>
+                        </TooltipContent>
+                    </Tooltip>
 
                     <ShareDialog
                         isOpen={isShareDialogOpen}

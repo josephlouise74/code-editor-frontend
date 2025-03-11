@@ -7,7 +7,7 @@ interface CreateRoomData {
     email: string;
 }
 
-const baseUrl = "https://code-editor-backend-jqof.onrender.com/api/v1";
+const baseUrl = "http://localhost:7400/api/v1";
 
 /* const baseUrl = "http://localhost:7400/api/v1"; */
 /* const baseUrl = "https://code-editor-backend-jqof.onrender.com/api/v1"; */
@@ -75,7 +75,7 @@ interface UpdateCodeData {
     token: string;
 }
 
-export const updateSaveChangesCodeApi = async (data: UpdateCodeData) => {
+export const updateSaveChangesCodeApi = async (data: any) => {
     try {
         const response = await axios.patch(
             `${baseUrl}/room/update-code`,
@@ -207,5 +207,101 @@ export const getAllChats = async (roomId: string) => {
         return response.data;
     } catch (error) {
         handleError(error as AxiosError);
+    }
+};
+
+
+interface HistoryParams {
+    page?: number;
+    limit?: number;
+    sortBy?: 'asc' | 'desc';
+}
+
+import ky from 'ky';
+
+interface HistoryResponse {
+    success: boolean;
+    message: string;
+    data: {
+        roomId: string;
+        history: Array<{
+            id: string;
+            version: number;
+            codeContent: {
+                html: string;
+                css: string;
+                javascript: string;
+            };
+            timestamp: string;
+            modifiedBy: string;
+        }>;
+        pagination: {
+            currentPage: number;
+            totalPages: number;
+            hasNextPage: boolean;
+            hasPrevPage: boolean;
+            nextPage: number | null;
+            prevPage: number | null;
+            totalItems: number;
+            itemsPerPage: number;
+        };
+        meta: {
+            timestamp: string;
+            query: {
+                page: number;
+                limit: number;
+                sortBy: string;
+            };
+        };
+    };
+}
+
+export const getAllHistoryCode = async (
+    roomId: string,
+    page: number = 1,
+    limit: number = 10,
+    sortBy: 'asc' | 'desc' = 'desc'
+): Promise<HistoryResponse> => {
+    try {
+        const searchParams = new URLSearchParams({
+            page: page.toString(),
+            limit: limit.toString(),
+            sortBy
+        });
+
+        const response = await ky.get(`${baseUrl}/room/history-code/${roomId}`, {
+            searchParams,
+            timeout: 10000,
+            retry: {
+                limit: 2,
+                methods: ['get'],
+                statusCodes: [408, 429, 500, 502, 503, 504]
+            },
+            hooks: {
+                beforeError: [
+                    error => {
+                        const { response } = error;
+                        if (response && response.body) {
+                            const message: any = 'Failed to fetch history data';
+                            toast.error(message);
+                        }
+                        return error;
+                    }
+                ]
+            }
+        }).json<HistoryResponse>();
+
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to fetch history data');
+        }
+
+        return response;
+    } catch (error: any) {
+        if (error instanceof Error) {
+            toast.error(error.message);
+        } else {
+            toast.error('An unexpected error occurred');
+        }
+        throw error;
     }
 };

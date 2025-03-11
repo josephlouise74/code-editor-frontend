@@ -1,19 +1,27 @@
 import { useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar } from "@/components/ui/avatar";
-import { useSearchParams } from "next/navigation";
+import { format } from "date-fns";
+import { toZonedTime } from 'date-fns-tz';
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
-interface Message {
-    id: string;
-    sender: string;
-    content: string;
+export interface ChatMessage {
+    uid: string;
+    name: string;
+    email: string;
+    message: string;
     timestamp: string;
-    system?: boolean;
-    senderEmail?: string;
+    isSelf?: boolean;
 }
 
+export interface ChatResponse {
+    success: boolean;
+    message: string;
+    data: ChatMessage;
+}
+
+
 interface ChatMessagesProps {
-    messages: Message[];
+    messages: ChatMessage[];
     userData: {
         email: string;
         name?: string;
@@ -23,59 +31,44 @@ interface ChatMessagesProps {
 
 export function ChatMessages({ messages, userData }: ChatMessagesProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const searchParams = useSearchParams();
 
-    // Get the participant information from URL params
-    const participantRole = searchParams.get("participantRole");
-    const participantEmail = searchParams.get("participantEmail");
-
-    // Determine which email to use for identifying self messages
-    const selfEmail = participantRole === "participant" && participantEmail
-        ? participantEmail
-        : userData?.email || "";
-
-    // Auto-scroll to bottom of messages
     useEffect(() => {
-        if (messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // Group consecutive messages from the same sender
-    const groupedMessages = messages.reduce<{
-        messages: Message[];
-        lastSender: string | null;
-        groups: Message[][];
-    }>(
-        (acc, message) => {
-            if (message.system) {
-                // System messages break the grouping
-                if (acc.messages.length > 0) {
-                    acc.groups.push([...acc.messages]);
-                    acc.messages = [];
-                }
-                acc.groups.push([message]);
-                acc.lastSender = null;
-            } else if (acc.lastSender === message.sender) {
-                // Group with previous messages from same sender
-                acc.messages.push(message);
-            } else {
-                // New sender, start a new group
-                if (acc.messages.length > 0) {
-                    acc.groups.push([...acc.messages]);
-                }
-                acc.messages = [message];
-                acc.lastSender = message.sender;
-            }
-            return acc;
-        },
-        { messages: [], lastSender: null, groups: [] }
+    const getPhilippineTime = (timestamp: string) => {
+        const date = new Date(timestamp);
+        const philippineTime = toZonedTime(date, 'Asia/Manila');
+        return philippineTime;
+    };
+
+    const getInitials = (name: string) => {
+        return name
+            .split(' ')
+            .map(part => part[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2);
+    };
+
+    // Sort messages by date
+    const sortedMessages = [...messages].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
-    // Add the last group if it exists
-    if (groupedMessages.messages.length > 0) {
-        groupedMessages.groups.push(groupedMessages.messages);
-    }
+    // Group messages by date using Philippine time
+    const messagesByDate = sortedMessages.reduce<Record<string, ChatMessage[]>>(
+        (groups, message) => {
+            const philTime = getPhilippineTime(message.timestamp);
+            const date = format(philTime, "MMMM d, yyyy");
+            if (!groups[date]) {
+                groups[date] = [];
+            }
+            groups[date].push(message);
+            return groups;
+        },
+        {}
+    );
 
     return (
         <ScrollArea className="flex-grow p-4">
@@ -87,81 +80,67 @@ export function ChatMessages({ messages, userData }: ChatMessagesProps) {
                     </div>
                 </div>
             ) : (
-                groupedMessages.groups.map((group, groupIndex) => {
-                    const firstMessage = group[0];
-
-                    if (firstMessage.system) {
-                        return (
-                            <div key={`group-${groupIndex}`} className="flex justify-center my-6">
-                                <div className="bg-muted/50 rounded-md py-2 px-4 text-xs text-muted-foreground max-w-[80%]">
-                                    {firstMessage.content}
-                                </div>
-                            </div>
-                        );
-                    }
-
-                    const isSelf = firstMessage.senderEmail === selfEmail;
-
-                    return (
-                        <div
-                            key={`group-${groupIndex}`}
-                            className={`mb-6 flex ${isSelf ? "justify-end" : "justify-start"}`}
-                        >
-                            <div className={`max-w-[80%] ${isSelf ? "items-end" : "items-start"} flex flex-col`}>
-                                {!isSelf && (
-                                    <div className="flex items-center mb-1 ml-1">
-                                        <div className="w-6 h-6 rounded-full bg-muted-foreground/20 flex items-center justify-center text-xs mr-2">
-                                            {firstMessage.sender.charAt(0).toUpperCase()}
-                                        </div>
-                                        <span className="text-xs font-medium">{firstMessage.sender}</span>
-                                    </div>
-                                )}
-
-                                <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"} gap-1`}>
-                                    {group.map((message, messageIndex) => (
-                                        <div
-                                            key={message.id}
-                                            className={`
-                                                relative px-4 py-2 
-                                                ${isSelf
-                                                    ? "bg-primary text-primary-foreground shadow-sm"
-                                                    : "bg-muted/60"
-                                                }
-                                                ${messageIndex === 0
-                                                    ? (isSelf ? "rounded-tl-lg rounded-tr-lg rounded-bl-lg" : "rounded-tl-lg rounded-tr-lg rounded-br-lg")
-                                                    : ""
-                                                }
-                                                ${messageIndex === group.length - 1
-                                                    ? (isSelf ? "rounded-tl-lg rounded-bl-lg rounded-br-lg" : "rounded-bl-lg rounded-br-lg rounded-tr-lg")
-                                                    : ""
-                                                }
-                                                ${group.length === 1 ? "rounded-lg" : ""}
-                                                ${isSelf ? "hover:bg-primary/90" : "hover:bg-muted"}
-                                                transition-colors duration-200
-                                            `}
-                                        >
-                                            <div className="break-words">{message.content}</div>
-                                            {messageIndex === group.length - 1 && (
-                                                <div className={`
-                                                    text-xs mt-1
-                                                    ${isSelf
-                                                        ? "text-primary-foreground/70"
-                                                        : "text-muted-foreground"
-                                                    }
-                                                `}>
-                                                    {new Date(message.timestamp).toLocaleTimeString([], {
-                                                        hour: "2-digit",
-                                                        minute: "2-digit",
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
+                Object.entries(messagesByDate).map(([date, dateMessages]) => (
+                    <div key={date}>
+                        <div className="flex justify-center my-6">
+                            <div className="bg-muted/30 rounded-full px-4 py-1 text-xs text-muted-foreground">
+                                {date}
                             </div>
                         </div>
-                    );
-                })
+
+                        {dateMessages.map((message, index) => {
+                            const isSelf = message.email === userData.email;
+                            const showSender =
+                                index === 0 ||
+                                dateMessages[index - 1]?.email !== message.email;
+
+                            return (
+                                <div
+                                    key={message.uid}
+                                    className={`mb-4 flex ${isSelf ? "justify-end" : "justify-start"}`}
+                                >
+                                    <div
+                                        className={`max-w-[70%] ${isSelf ? "items-end" : "items-start"} flex flex-col`}
+                                    >
+                                        {!isSelf && showSender && (
+                                            <div className="flex items-center mb-1 ml-1">
+                                                <Avatar className="h-6 w-6 mr-2">
+                                                    <AvatarFallback className="bg-primary/10 text-xs">
+                                                        {getInitials(message.name)}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <span className="text-xs font-medium">
+                                                    {message.name}
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        <div
+                                            className={`
+                                                px-4 py-2 rounded-2xl
+                                                ${isSelf ? "bg-blue-600 text-white" : "bg-muted/60"}
+                                                ${isSelf ? "rounded-br-sm" : "rounded-bl-sm"}
+                                                max-w-full
+                                            `}
+                                        >
+                                            <div className="break-words whitespace-pre-wrap text-sm">
+                                                {message.message}
+                                            </div>
+                                            <div
+                                                className={`
+                                                    text-[10px] mt-1
+                                                    ${isSelf ? "text-blue-100" : "text-muted-foreground"}
+                                                `}
+                                            >
+                                                {format(getPhilippineTime(message.timestamp), "h:mm a")}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ))
             )}
             <div ref={messagesEndRef} />
         </ScrollArea>

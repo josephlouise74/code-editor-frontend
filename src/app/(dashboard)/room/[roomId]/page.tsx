@@ -1,6 +1,7 @@
 "use client";
 
 import { ChatMessages } from "@/components/CodeEditor/ChatMessages";
+import { HistoryTracker } from "@/components/CodeEditor/HistoryTracker";
 import { ParticipantForm } from "@/components/CodeEditor/ParticipantForm";
 import PreviewPanel from "@/components/CodeEditor/PreviewPanel";
 import ToolBar from "@/components/CodeEditor/Toolbar";
@@ -12,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getAllChats, getRoomData, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
+import { getAllChats, getAllHistoryCode, getRoomData, sendNewMessageInGroupChatApiRequest, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
 import { roomStore } from "@/lib/store/roomStore";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
@@ -29,7 +30,6 @@ import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { sendNewMessageInGroupChatApiRequest } from "@/lib/api/roomApi"; // Add this import
 
 // Define interfaces at the top of the file
 interface Message {
@@ -103,9 +103,34 @@ export default function HomeScreen() {
     const [isSaving, setIsSaving] = useState(false);
 
     const [userData, setUserData] = useState<any>(null)
+    // Update your state declarations
+    const [codeHistory, setCodeHistory] = useState<any>({
+        roomId: '',
+        history: [],
+        pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+            nextPage: null,
+            prevPage: null,
+            totalItems: 0,
+            itemsPerPage: 10
+        },
+        meta: {
+            timestamp: '',
+            query: {
+                page: 1,
+                limit: 10,
+                sortBy: 'timestamp'
+            }
+        }
+    });
+    const [showHistory, setShowHistory] = useState(false);
 
 
     const isParticipant = searchParams.get('participant') === 'true';
+    const hostName = searchParams.get('host');
     // Helper: Get CSS class for console log based on type
     function getConsoleLogClass(type: string): string {
         switch (type) {
@@ -119,6 +144,55 @@ export default function HomeScreen() {
                 return "text-green-400";
         }
     }
+    const handleRestoreVersion = (version: any) => {
+        const { html, css, javascript } = version.codeContent;
+        setHtmlCode(html);
+        setCssCode(css);
+        setJsCode(javascript);
+        toast.success('Code version restored successfully');
+    };
+
+    const fetchHistory = async (page = 1, limit = 10) => {
+        try {
+            if (!roomId) {
+                console.warn('Room ID is not available');
+                return;
+            }
+
+            const historyCodeResponse = await getAllHistoryCode(roomId, page, limit);
+            if (historyCodeResponse?.success) {
+                setCodeHistory(historyCodeResponse.data);
+            } else {
+                console.warn('No history data available');
+            }
+        } catch (error) {
+            console.error('Error fetching code history:', error);
+            toast.error('Failed to load code history');
+        }
+    };
+
+    const handlePreviewVersion = (version: any) => {
+        const { html, css, javascript } = version.codeContent;
+        const previewDoc = `
+            <html>
+                <head><style>${css}</style></head>
+                <body>${html}<script>${javascript}</script></body>
+            </html>
+        `;
+        const previewWindow = window.open('', '_blank');
+        if (previewWindow) {
+            previewWindow.document.write(previewDoc);
+            previewWindow.document.close();
+        }
+    };
+
+    const handlePageChange = (page: number) => {
+        fetchHistory(page, codeHistory.pagination.itemsPerPage);
+    };
+
+    const handleLimitChange = (limit: number) => {
+        fetchHistory(1, limit);
+    };
 
     const getRoomDataFetch = async (roomId: string, token: string) => {
         try {
@@ -171,35 +245,11 @@ export default function HomeScreen() {
         }
     };
 
-    const getAllDataChats = async (roomId: string) => {
-        try {
-            const response = await getAllChats(roomId);
-
-            if (!response?.success || !Array.isArray(response.data)) {
-                throw new Error('Invalid chat data received');
-            }
-
-            const formattedChats = response.data.map((chat: any) => ({
-                id: chat.id || nanoid(),
-                sender: chat.name,
-                content: chat.message,
-                timestamp: chat.createdAt || new Date().toISOString(),
-                isSelf: chat.email === userData?.email
-            }));
-
-            setMessages(formattedChats);
-            return true;
-        } catch (error) {
-            console.error('Error fetching chat messages:', error);
-            toast.error('Failed to load chat messages');
-            return false;
-        }
-    };
-
     useEffect(() => {
         const currentRoomId = params.roomId as string;
         const currentToken = searchParams.get('token');
-
+        const host = searchParams.get('host');
+        console.log("hosth", host)
         if (!currentRoomId || !currentToken) {
             toast.error('Missing room ID or token');
             return;
@@ -211,6 +261,7 @@ export default function HomeScreen() {
 
                 // Fetch room data first
                 const roomDataSuccess = await getRoomDataFetch(currentRoomId, currentToken);
+                console.log("roomdata", roomDataSuccess)
                 if (!roomDataSuccess) return;
 
                 // Then fetch chat data
@@ -223,6 +274,21 @@ export default function HomeScreen() {
                 const generatedUsername = `User-${nanoid(4)}`;
                 setUsername(generatedUsername);
                 connectToRoom(currentRoomId);
+                fetchHistory()
+                // Fetch and store history data
+                try {
+                    const historyCodeResponse = await getAllHistoryCode(currentRoomId);
+                    console.log("hostName", hostName)
+                    console.log("hs", historyCodeResponse.data.history)
+                    if (historyCodeResponse?.success && historyCodeResponse?.data?.history) {
+                        setCodeHistory(historyCodeResponse.data.history);
+                    } else {
+                        console.warn('No history data available');
+                    }
+                } catch (error) {
+                    console.error('Error fetching code history:', error);
+                    toast.error('Failed to load code history');
+                }
 
             } catch (error) {
                 console.error('Error initializing room:', error);
@@ -336,57 +402,61 @@ export default function HomeScreen() {
     useEffect(() => {
         const timeout = setTimeout(() => {
             const consoleInterceptScript = `
-        <script>
-          const originalConsole = console;
-          console = {
-            log: function() {
-              originalConsole.log.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'log',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            },
-            error: function() {
-              originalConsole.error.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'error',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            },
-            warn: function() {
-              originalConsole.warn.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'warn',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            },
-            info: function() {
-              originalConsole.info.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'info',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            }
-          };
-        </script>
-      `;
+            <script>
+              const originalConsole = console;
+              console = {
+                log: function() {
+                  originalConsole.log.apply(originalConsole, arguments);
+                  window.parent.postMessage({
+                    type: 'console',
+                    logType: 'log',
+                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+                  }, '*');
+                },
+                error: function() {
+                  originalConsole.error.apply(originalConsole, arguments);
+                  window.parent.postMessage({
+                    type: 'console',
+                    logType: 'error',
+                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+                  }, '*');
+                },
+                warn: function() {
+                  originalConsole.warn.apply(originalConsole, arguments);
+                  window.parent.postMessage({
+                    type: 'console',
+                    logType: 'warn',
+                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+                  }, '*');
+                },
+                info: function() {
+                  originalConsole.info.apply(originalConsole, arguments);
+                  window.parent.postMessage({
+                    type: 'console',
+                    logType: 'info',
+                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+                  }, '*');
+                }
+              };
+            </script>
+          `;
 
             const source = `
-        <html>
-          <head>
-            <style>${cssCode}</style>
-            ${consoleInterceptScript}
-          </head>
-          <body>
-            ${htmlCode}
-            <script>${jsCode}<\/script>
-          </body>
-        </html>
-      `;
+            <html>
+              <head>
+                <style>${cssCode}</style>
+                ${consoleInterceptScript}
+              </head>
+              <body>
+                ${htmlCode}
+                <script>
+                  document.addEventListener('DOMContentLoaded', function() {
+                    ${jsCode}
+                  });
+                </script>
+              </body>
+            </html>
+          `;
             setSrcDoc(source);
         }, 250);
         return () => clearTimeout(timeout);
@@ -422,44 +492,65 @@ export default function HomeScreen() {
 
     // Send chat message
     // Update the sendMessage function
+    // Update the messages state to use the proper type
+
+    // Update the getAllDataChats function
+    const getAllDataChats = async (roomId: string) => {
+        try {
+            const response = await getAllChats(roomId);
+            console.log("res222", response)
+            /* if (!response?.success || !Array.isArray(response.data?.chats)) {
+                throw new Error('Invalid chat data received');
+            } */
+
+            const formattedChats: any[] = response.data.map((chat: any) => ({
+                ...chat,
+                isSelf: chat.email === userData?.email
+            }));
+
+            setMessages(formattedChats);
+            return true;
+        } catch (error) {
+            console.error('Error fetching chat messages:', error);
+            toast.error('Failed to load chat messages');
+            return false;
+        }
+    };
+
+    // Update the sendMessage function
     const sendMessage = async () => {
         if (!messageInput.trim() || isMessageSending) return;
 
         try {
             setIsMessageSending(true);
             const role = searchParams.get('participantRole');
-            let senderName, senderEmail;
-
-            if (role === 'participant') {
-                senderName = searchParams.get('participantName') || '';
-                senderEmail = searchParams.get('participantEmail') || '';
-            } else {
-                senderName = userData?.name || '';
-                senderEmail = userData?.email || '';
-            }
+            const senderName = role === 'participant'
+                ? searchParams.get('participantName') || ''
+                : userData?.name || '';
+            const senderEmail = role === 'participant'
+                ? searchParams.get('participantEmail') || ''
+                : userData?.email || '';
 
             const messageData = {
-                roomId: roomId,
+                roomId,
                 token: token || '',
                 name: senderName,
                 email: senderEmail,
-                message: messageInput,
+                message: messageInput.trim(),
             };
 
             const response = await sendNewMessageInGroupChatApiRequest(messageData);
 
             if (response.success) {
-                const newMessage = {
-                    id: nanoid(),
-                    sender: senderName,
-                    content: messageInput,
-                    timestamp: new Date().toISOString(),
-                    isSelf: true,
+                const newMessage: any = {
+                    ...response.data,
+                    isSelf: true
                 };
 
-                setMessages((prev) => [...prev, newMessage]);
+                setMessages(prev => [...prev, newMessage]);
                 setMessageInput("");
 
+                // Emit to socket if connected
                 if (isConnected) {
                     socket.current.emit("chat-message", {
                         room: roomId,
@@ -469,11 +560,11 @@ export default function HomeScreen() {
             }
         } catch (error) {
             console.error('Error in sendMessage:', error);
+            toast.error('Failed to send message');
         } finally {
             setIsMessageSending(false);
         }
     };
-
     // Clear console logs
     const clearConsole = () => {
         setConsoleLogs([]);
@@ -508,7 +599,9 @@ export default function HomeScreen() {
                     css: cssCode,
                     javascript: jsCode
                 },
-                token: roomStore.token
+                token: roomStore.token,
+                userData,
+
             };
 
             const response = await updateSaveChangesCodeApi(updateData);
@@ -670,7 +763,23 @@ export default function HomeScreen() {
                         handleSaveChanges={handleSaveChanges}
                         isSaving={isSaving}
                         token={searchParams.get('token') || ''}
+                        showHistory={showHistory}
+                        setShowHistory={setShowHistory}
                     />
+
+                    {/* Add the HistoryTracker */}
+                    {showHistory && (
+                        <div className="fixed right-[320px] top-16 bottom-0 w-[400px] border-l bg-background p-4 overflow-auto">
+                            <HistoryTracker
+                                historyData={codeHistory}
+                                onRestoreVersion={handleRestoreVersion}
+                                onPreviewVersion={handlePreviewVersion}
+                                onPageChange={handlePageChange}
+                                onLimitChange={handleLimitChange}
+                            />
+                        </div>
+                    )}
+
 
                     {/* Notification Banners */}
                     <div className="space-y-2 mx-4 my-2">

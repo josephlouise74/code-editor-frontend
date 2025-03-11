@@ -11,6 +11,8 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import { Lock, Hash } from "lucide-react";
 import { createRoomApi } from "@/lib/api/roomApi";
 import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 // Update the schema to include email
 const roomSchema = z.object({
@@ -22,35 +24,39 @@ const roomSchema = z.object({
 type RoomFormValues = z.infer<typeof roomSchema>;
 
 export default function CreateRoomForm() {
+    const router = useRouter();
     const form = useForm<RoomFormValues>({
         resolver: zodResolver(roomSchema),
         defaultValues: {
             roomName: "",
             password: "",
-            email: "", // Add email default value
+            email: "",
         },
     });
 
+    const [isLoading, setIsLoading] = useState(false);
+
     const onSubmit = async (data: RoomFormValues) => {
+        setIsLoading(true);
         try {
             const response = await createRoomApi({
                 roomName: data.roomName,
                 password: data.password,
-                email: data.email // Include email in API call
+                email: data.email
             });
 
-            // You can access the created room data from response
             console.log("Room Created:", response);
-
-            // Reset form after successful creation
             form.reset();
 
-            // You can add navigation here if needed
-            // router.push(`/room/${response.roomId}`);
+            // Add timeout and navigation
+            setTimeout(() => {
+                router.push('/');  // Navigate to sign in page
+            }, 1000);
 
         } catch (error) {
-            // Error handling is already done in createRoomApi with toast
             console.error("Failed to create room:", error);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -142,8 +148,9 @@ export default function CreateRoomForm() {
                                 )}
                             />
 
-                            <Button type="submit" className="w-full">
-                                Create Room
+
+                            <Button type="submit" className="w-full" disabled={isLoading}>
+                                {isLoading ? "Creating..." : "Create Room"}
                             </Button>
                         </form>
                     </Form>
