@@ -89,13 +89,15 @@ interface WebSocketMessage {
 
 export default function HomeScreen() {
     // State variables with type annotations
-    const [htmlCode, setHtmlCode] = useState<string>("<h1>Hello World</h1>\n<button id=\"testBtn\">Test Console</button>");
+    const [htmlCode, setHtmlCode] = useState<string>("");
     const [cssCode, setCssCode] = useState<string>(
-        "h1 { color: blue; }\nbutton { padding: 8px 16px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }"
+        ""
     );
     const [jsCode, setJsCode] = useState<string>(
         "document.getElementById('testBtn').addEventListener('click', () => {\n  console.log('Button clicked!');\n  console.error('This is an error');\n  console.warn('This is a warning');\n});"
     );
+
+    const [showChatSidebar, setShowChatSidebar] = useState<boolean>(false);
     const [srcDoc, setSrcDoc] = useState<any>("");
     const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
     const [copied, setCopied] = useState<boolean>(false);
@@ -202,6 +204,10 @@ export default function HomeScreen() {
             previewWindow.document.write(previewDoc);
             previewWindow.document.close();
         }
+    };
+
+    const toggleChatSidebar = () => {
+        setShowChatSidebar(prev => !prev);
     };
 
     const handlePageChange = (page: number) => {
@@ -876,13 +882,79 @@ export default function HomeScreen() {
     };
 
     // Render Chat Sidebar
+    /*     const renderChatSidebar = () => {
+            return (
+                <div className="flex flex-col h-full border-2  relative z-50">
+                    <Tabs defaultValue="chat" className="flex flex-col h-full">
+                        <div className="p-4 border-b-2 relative z-40">
+                            <TabsList className="w-full border">
+                                <TabsTrigger value="chat" className="flex-1 border-r">
+                                    <MessageSquare className="w-4 h-4 mr-2" />
+                                    Chat
+                                </TabsTrigger>
+                                <TabsTrigger value="users" className="flex-1">
+                                    <Users className="w-4 h-4 mr-2" />
+                                    Users
+                                </TabsTrigger>
+                            </TabsList>
+                        </div>
+    
+                        <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
+                            <ChatMessages messages={messages} userData={userData} />
+    
+                            <div className="p-4 border-t-2 bg-white relative z-40">
+                                <form
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        sendMessage();
+                                    }}
+                                    className="flex space-x-2"
+                                >
+                                    <Input
+                                        value={messageInput}
+                                        onChange={(e) => setMessageInput(e.target.value)}
+                                        placeholder="Type a message..."
+                                        className="flex-grow"
+                                        disabled={isMessageSending}
+                                    />
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        disabled={isMessageSending || !messageInput.trim()}
+                                        className="border"
+                                    >
+                                        {isMessageSending ? "Sending..." : "Send"}
+                                    </Button>
+                                </form>
+                            </div>
+                        </TabsContent>
+    
+    
+    
+                    </Tabs>
+                </div>
+            );
+        };
+     */
+    // Render Chat Sidebar
     const renderChatSidebar = () => {
         return (
-            <div className="flex flex-col h-full border-2  relative z-50">
-                <Tabs defaultValue="chat" className="flex flex-col h-full bg-white">
-                    <div className="p-4 border-b-2  relative z-40">
-                        <TabsList className="w-full border ">
-                            <TabsTrigger value="chat" className="flex-1 border-r ">
+            <div className="flex flex-col h-full border-2 bg-white relative z-50">
+                <div className="flex justify-between items-center p-3 border-b">
+                    <h3 className="font-medium">Chat & Participants</h3>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowChatSidebar(false)}
+                        className="h-8 w-8 p-0"
+                    >
+                        <X size={16} />
+                    </Button>
+                </div>
+                <Tabs defaultValue="chat" className="flex flex-col h-full">
+                    <div className="p-4 border-b-2 relative z-40">
+                        <TabsList className="w-full border">
+                            <TabsTrigger value="chat" className="flex-1 border-r">
                                 <MessageSquare className="w-4 h-4 mr-2" />
                                 Chat
                             </TabsTrigger>
@@ -896,7 +968,7 @@ export default function HomeScreen() {
                     <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
                         <ChatMessages messages={messages} userData={userData} />
 
-                        <div className="p-4 border-t-2  bg-white relative z-40">
+                        <div className="p-4 border-t-2 bg-white relative z-40">
                             <form
                                 onSubmit={(e) => {
                                     e.preventDefault();
@@ -908,14 +980,14 @@ export default function HomeScreen() {
                                     value={messageInput}
                                     onChange={(e) => setMessageInput(e.target.value)}
                                     placeholder="Type a message..."
-                                    className="flex-grow "
+                                    className="flex-grow"
                                     disabled={isMessageSending}
                                 />
                                 <Button
                                     type="submit"
                                     size="sm"
                                     disabled={isMessageSending || !messageInput.trim()}
-                                    className="border "
+                                    className="border"
                                 >
                                     {isMessageSending ? "Sending..." : "Send"}
                                 </Button>
@@ -996,7 +1068,7 @@ export default function HomeScreen() {
             {isParticipant && <ParticipantForm token={token} roomId={roomId} />}
             <div className="flex overflow-hidden bg-background ">
                 {/* Main Content */}
-                <div className={`flex-grow flex flex-col ${!isFullScreen ? "lg:mr-[320px]" : ""}`}>
+                <div className={`flex-grow flex flex-col ${!isFullScreen ? "" : ""}`}>
                     {/* Top Toolbar - Pass handleSaveChanges to ToolBar */}
                     <ToolBar
                         roomId={roomId}
@@ -1014,6 +1086,9 @@ export default function HomeScreen() {
                         token={searchParams.get('token') || ''}
                         showHistory={showHistory}
                         setShowHistory={setShowHistory}
+
+                        showChatSidebar={showChatSidebar}
+                        setShowChatSidebar={setShowChatSidebar}
                     />
 
                     {/* Add the HistoryTracker */}
@@ -1185,9 +1260,12 @@ export default function HomeScreen() {
                 </div>
 
                 {/* Chat Sidebar (Desktop) */}
-                <div className={`hidden sm:block fixed right-0 top-0 bottom-0 w-[320px] ${isFullScreen ? "hidden" : "lg:block"}`}>
-                    {renderChatSidebar()}
-                </div>
+
+                {showChatSidebar && (
+                    <div className="fixed right-0 top-0 bottom-0 w-[320px] z-50 shadow-xl transition-all duration-300 ease-in-out">
+                        {renderChatSidebar()}
+                    </div>
+                )}
             </div>
         </TooltipProvider>
     );

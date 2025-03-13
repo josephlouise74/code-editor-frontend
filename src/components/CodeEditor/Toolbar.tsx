@@ -15,6 +15,7 @@ import {
     X,
     Loader2,
     History,
+    MessageSquare, // Add MessageSquare icon
 } from "lucide-react";
 import { ShareDialog } from "./ShareDialog";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,9 @@ interface ToolBarProps {
     // ... existing props
     showHistory: boolean;
     setShowHistory: (show: boolean) => void;
+    // Add new props for chat sidebar
+    showChatSidebar: boolean;
+    setShowChatSidebar: (show: boolean) => void;
 }
 
 export default function ToolBar({
@@ -69,11 +73,13 @@ export default function ToolBar({
     setCopied,
     handleSaveChanges,
     isSaving,
-    token
+    token,
+    // Add new props with default values
+    showChatSidebar = false,
+    setShowChatSidebar = () => { }
 }: any) {
 
     const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
-
 
     const handleShareRoom = () => {
         setIsShareDialogOpen(true);
@@ -151,6 +157,25 @@ export default function ToolBar({
                             <p>Save & Run</p>
                         </TooltipContent>
                     </Tooltip> */}
+
+                    {/* Add Chat Button */}
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                onClick={() => setShowChatSidebar(!showChatSidebar)}
+                                variant={showChatSidebar ? "default" : "outline"}
+                                size="sm"
+                                className="h-8"
+                            >
+                                <MessageSquare size={16} className="mr-1" />
+                                <span className="hidden md:inline">Chat</span>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p>{showChatSidebar ? "Hide Chat" : "Show Chat"}</p>
+                        </TooltipContent>
+                    </Tooltip>
+
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button onClick={handleShareRoom} variant="outline" size="sm" className="h-8">
@@ -173,7 +198,7 @@ export default function ToolBar({
                             <p>Save Changes</p>
                         </TooltipContent>
                     </Tooltip>
-                    <Tooltip>
+                    {/*   <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
                                 onClick={() => setIsFullScreen(!isFullScreen)}
@@ -187,7 +212,7 @@ export default function ToolBar({
                         <TooltipContent>
                             <p>{isFullScreen ? "Exit Fullscreen" : "Fullscreen"}</p>
                         </TooltipContent>
-                    </Tooltip>
+                    </Tooltip> */}
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
