@@ -8,7 +8,7 @@ export default async function DashboardLayout({
     return (
         <div className="flex min-h-screen bg-muted/40">
             {/* Mobile and Tablet Warning */}
-            <div className="lg:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+            {/*    <div className="lg:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
                 <div className="bg-white rounded-lg p-6 max-w-md text-center">
                     <h2 className="text-xl font-bold mb-4 text-gray-900">Desktop View Required</h2>
                     <p className="text-gray-600">
@@ -16,7 +16,7 @@ export default async function DashboardLayout({
                         The editor is not optimized for mobile or tablet devices.
                     </p>
                 </div>
-            </div>
+            </div> */}
 
             {/* Main content area */}
             <div className="flex flex-1 flex-col w-full">

@@ -17,7 +17,7 @@ import { getAllChats, getAllHistoryCode, getRoomData, sendNewMessageInGroupChatA
 import { roomStore } from "@/lib/store/roomStore";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
-import { javascript as jsLang } from "@codemirror/lang-javascript";
+import { javascript, javascript as jsLang } from "@codemirror/lang-javascript";
 import {
     MessageSquare,
     Terminal,
@@ -30,6 +30,7 @@ import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
+import { io } from "socket.io-client";
 
 // Define interfaces at the top of the file
 interface Message {
@@ -57,6 +58,7 @@ interface ConsoleLog {
 // Mock socket functions (replace with your actual implementation)
 // Update socket type
 const mockSocket: {
+    id?: string;
     emit: (event: string, data: any) => void;
     on: (event: string, callback: (data: any) => void) => void;
     off: (event: string, callback: (data: any) => void) => void;
@@ -69,6 +71,22 @@ const mockSocket: {
 // Dynamically import CodeMirror to avoid SSR issues
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
 
+
+// Add WebSocket types
+interface WebSocketMessage {
+    type: 'init' | 'codeUpdate' | 'cursorUpdate';
+    data: {
+        code?: string;
+        language?: string;
+        roomId: string;
+        userId: string;
+        cursorPosition?: number;
+        html?: string;
+        css?: string;
+        javascript?: string;
+    };
+}
+
 export default function HomeScreen() {
     // State variables with type annotations
     const [htmlCode, setHtmlCode] = useState<string>("<h1>Hello World</h1>\n<button id=\"testBtn\">Test Console</button>");
@@ -78,7 +96,7 @@ export default function HomeScreen() {
     const [jsCode, setJsCode] = useState<string>(
         "document.getElementById('testBtn').addEventListener('click', () => {\n  console.log('Button clicked!');\n  console.error('This is an error');\n  console.warn('This is a warning');\n});"
     );
-    const [srcDoc, setSrcDoc] = useState<string>("");
+    const [srcDoc, setSrcDoc] = useState<any>("");
     const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
     const [copied, setCopied] = useState<boolean>(false);
     const [roomId, setRoomId] = useState<string>("");
@@ -126,6 +144,8 @@ export default function HomeScreen() {
     });
     const [showHistory, setShowHistory] = useState(false);
 
+    const wsRef = useRef<WebSocket | null>(null);
+    const [wsConnected, setWsConnected] = useState(false);
 
     const isParticipant = searchParams.get('participant') === 'true';
     const hostName = searchParams.get('host');
@@ -242,6 +262,88 @@ export default function HomeScreen() {
             return false;
         }
     };
+    // Add WebSocket connection effect
+    useEffect(() => {
+        const currentRoomId = params.roomId as string;
+        if (!currentRoomId || !token) return;
+
+        // Create WebSocket connection
+        const ws = new WebSocket('ws://localhost:7400');
+        wsRef.current = ws;
+
+        // Connection opened
+        ws.addEventListener('open', () => {
+            console.log('WebSocket connection established');
+            setWsConnected(true);
+
+            // Send initialization message
+            const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
+            const initMessage: WebSocketMessage = {
+                type: 'init',
+                data: {
+                    roomId: currentRoomId,
+                    userId
+                }
+            };
+            ws.send(JSON.stringify(initMessage));
+
+            toast.success('Connected to code sync server');
+        });
+
+        // Listen for messages
+        ws.addEventListener('message', (event) => {
+            try {
+                const message: WebSocketMessage = JSON.parse(event.data);
+
+                switch (message.type) {
+                    case 'init':
+                        // Handle initial code state if needed
+                        if (message.data.html) setHtmlCode(message.data.html);
+                        if (message.data.css) setCssCode(message.data.css);
+                        if (message.data.javascript) setJsCode(message.data.javascript);
+                        break;
+
+                    case 'codeUpdate':
+                        // Update code based on language
+                        if (message.data.language === 'html' && message.data.code) {
+                            setHtmlCode(message.data.code);
+                        } else if (message.data.language === 'css' && message.data.code) {
+                            setCssCode(message.data.code);
+                        } else if (message.data.language === 'javascript' && message.data.code) {
+                            setJsCode(message.data.code);
+                        }
+                        break;
+
+                    case 'cursorUpdate':
+                        // Handle cursor updates if needed
+                        // This would require additional UI elements to show other users' cursors
+                        break;
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
+            }
+        });
+
+        // Connection closed
+        ws.addEventListener('close', () => {
+            console.log('WebSocket connection closed');
+            setWsConnected(false);
+            toast.warning('Disconnected from code sync server');
+        });
+
+        // Connection error
+        ws.addEventListener('error', (error) => {
+            console.error('WebSocket error:', error);
+            toast.error('Error connecting to code sync server');
+        });
+
+        // Clean up on unmount
+        return () => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
+        };
+    }, [params.roomId, token, userData?.id]);
 
     useEffect(() => {
         const currentRoomId = params.roomId as string;
@@ -307,48 +409,133 @@ export default function HomeScreen() {
     // Connect to room with type annotations
     const connectToRoom = (roomId: string): void => {
         console.log(`Connecting to room: ${roomId}`);
-        // Mock connection establishment
-        /*   setTimeout(() => {
-              setIsConnected(true);
-  
-              // Add welcome message
-              setMessages((prev: Message[]) => [
-                  ...prev,
-                  {
-                      id: nanoid(),
-                      sender: "System",
-                      content: `Welcome to room ${roomId}! Share this link with others to collaborate.`,
-                      timestamp: new Date().toISOString(),
-                      system: true,
-                  },
-              ]);
-          }, 1000); */
 
-        // Mock socket event handlers
-        socket.current.on("code-update", (data) => {
-            if (data.type === "html") setHtmlCode(data.content);
-            if (data.type === "css") setCssCode(data.content);
-            if (data.type === "js") setJsCode(data.content);
-        });
+        // Initialize socket if not already done
+        if (!socket.current) {
+            // Connect to your socket server
+            socket.current = io("http://localhost:3001", {
+                withCredentials: true,
+                transports: ["websocket"],
+            });
 
-        socket.current.on("chat-message", (data) => {
-            setMessages((prev) => [...prev, data]);
-        });
+            // Handle connection event
+            socket.current.on("connect", () => {
+                console.log("Socket connected:", socket.current?.id);
+                setIsConnected(true);
 
-        socket.current.on("user-joined", (user) => {
-            setUsers((prev) => [...prev, user]);
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: nanoid(),
-                    sender: "System",
-                    content: `${user.name} has joined the room`,
-                    timestamp: new Date().toISOString(),
-                    system: true,
-                },
-            ]);
-        });
+                // Get user info from URL or state
+                const role = searchParams.get('participantRole');
+                const userName = role === 'participant'
+                    ? searchParams.get('participantName') || ''
+                    : userData?.name || '';
+                const userEmail = role === 'participant'
+                    ? searchParams.get('participantEmail') || ''
+                    : userData?.email || '';
+
+                // Generate a temporary ID if socket.current.id is undefined
+                const socketId = socket.current.id || `temp-${nanoid()}`;
+
+                // Join the room with user data
+                socket.current?.emit("join-room", {
+                    roomId,
+                    user: {
+                        id: socketId,
+                        name: userName,
+                        email: userEmail
+                    }
+                });
+
+                // Add system message
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        id: nanoid(),
+                        sender: "System",
+                        content: `Connected to room ${roomId}`,
+                        timestamp: new Date().toISOString(),
+                        system: true,
+                    }
+                ]);
+            });
+
+            // Handle code updates from other users
+            socket.current.on("code-update", (data) => {
+                if (data.type === "html") setHtmlCode(data.content);
+                if (data.type === "css") setCssCode(data.content);
+                if (data.type === "js") setJsCode(data.content);
+
+                // Add notification about the change
+                toast.info(`${data.userName || 'Someone'} updated the ${data.type} code`);
+            });
+
+            // Handle chat messages
+            socket.current.on("chat-message", (data) => {
+                setMessages(prev => [...prev, data]);
+            });
+
+            // Handle user joined events
+            socket.current.on("user-joined", (user) => {
+                setUsers(prev => [...prev, { ...user, online: true }]);
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        id: nanoid(),
+                        sender: "System",
+                        content: `${user.name} has joined the room`,
+                        timestamp: new Date().toISOString(),
+                        system: true,
+                    },
+                ]);
+            });
+
+            // Handle user left events
+            socket.current.on("user-left", (userId) => {
+                setUsers(prev => {
+                    const updatedUsers = [...prev];
+                    const userIndex = updatedUsers.findIndex(u => u.id === userId);
+
+                    if (userIndex !== -1) {
+                        const userName = updatedUsers[userIndex].name;
+                        updatedUsers[userIndex] = {
+                            ...updatedUsers[userIndex],
+                            online: false
+                        };
+
+                        setMessages(prev => [
+                            ...prev,
+                            {
+                                id: nanoid(),
+                                sender: "System",
+                                content: `${userName} has left the room`,
+                                timestamp: new Date().toISOString(),
+                                system: true,
+                            },
+                        ]);
+                    }
+
+                    return updatedUsers;
+                });
+            });
+
+            // Handle room users list
+            socket.current.on("room-users", (users) => {
+                setUsers(users.map((user: any) => ({ ...user, online: true })));
+            });
+
+            // Handle disconnect
+            socket.current.on("disconnect", () => {
+                setIsConnected(false);
+                toast.warning("Disconnected from server. Trying to reconnect...");
+            });
+
+            // Handle errors
+            socket.current.on("error", (error) => {
+                console.error("Socket error:", error);
+                toast.error("Connection error: " + error);
+            });
+        }
     };
+
 
     // Intercept console logs from the iframe
     useEffect(() => {
@@ -397,69 +584,99 @@ export default function HomeScreen() {
     }, [params.roomId]);
 
     // Update the live preview with a debounce and console intercept script
+    // Update the live preview with a debounce and console intercept script
+    // Update the live preview with a debounce and console intercept script
+    // Update the live preview with a debounce and console intercept script
     useEffect(() => {
         const timeout = setTimeout(() => {
             const consoleInterceptScript = `
-            <script>
-              const originalConsole = console;
-              console = {
-                log: function() {
-                  originalConsole.log.apply(originalConsole, arguments);
-                  window.parent.postMessage({
-                    type: 'console',
-                    logType: 'log',
-                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-                  }, '*');
-                },
-                error: function() {
-                  originalConsole.error.apply(originalConsole, arguments);
-                  window.parent.postMessage({
-                    type: 'console',
-                    logType: 'error',
-                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-                  }, '*');
-                },
-                warn: function() {
-                  originalConsole.warn.apply(originalConsole, arguments);
-                  window.parent.postMessage({
-                    type: 'console',
-                    logType: 'warn',
-                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-                  }, '*');
-                },
-                info: function() {
-                  originalConsole.info.apply(originalConsole, arguments);
-                  window.parent.postMessage({
-                    type: 'console',
-                    logType: 'info',
-                    content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-                  }, '*');
-                }
-              };
-            </script>
-          `;
+        <script>
+          const originalConsole = console;
+          console = {
+            log: function() {
+              originalConsole.log.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'log',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            },
+            error: function() {
+              originalConsole.error.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'error',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            },
+            warn: function() {
+              originalConsole.warn.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'warn',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            },
+            info: function() {
+              originalConsole.info.apply(originalConsole, arguments);
+              window.parent.postMessage({
+                type: 'console',
+                logType: 'info',
+                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+              }, '*');
+            }
+          };
+          
+          // Capture and report global errors
+          window.addEventListener('error', function(event) {
+            console.error('JavaScript error:', event.message);
+            return false;
+          });
+        </script>
+      `;
 
             const source = `
-            <html>
-              <head>
-                <style>${cssCode}</style>
-                ${consoleInterceptScript}
-              </head>
-              <body>
-                ${htmlCode}
-                <script>
-                  document.addEventListener('DOMContentLoaded', function() {
+        <html>
+          <head>
+            <style>${cssCode}</style>
+            ${consoleInterceptScript}
+          </head>
+          <body>
+            ${htmlCode}
+            <script>
+              // Wrap all JavaScript code in a try-catch block
+              try {
+                // Safe element access function
+                function getElement(id) {
+                  const el = document.getElementById(id);
+                  if (!el) {
+                    return null;
+                  }
+                  return el;
+                }
+                
+                // Execute code when DOM is ready
+                document.addEventListener('DOMContentLoaded', function() {
+                  try {
+                    // Your user JavaScript code
                     ${jsCode}
-                  });
-                </script>
-              </body>
-            </html>
-          `;
+                  } catch (error) {
+                    console.error('JavaScript execution error:', error.message);
+                  }
+                  
+                  // Removed the "Page fully loaded" console log
+                });
+              } catch (outerError) {
+                console.error('Fatal JavaScript error:', outerError.message);
+              }
+            </script>
+          </body>
+        </html>
+      `;
             setSrcDoc(source);
         }, 250);
         return () => clearTimeout(timeout);
     }, [htmlCode, cssCode, jsCode]);
-
     // Share the room URL for collaborative editing
     const handleShareRoom = async () => {
         const shareUrl = window.location.href;
@@ -478,7 +695,7 @@ export default function HomeScreen() {
         if (type === "css") setCssCode(value);
         if (type === "js") setJsCode(value);
 
-        // Emit changes to other users in the room
+        // Emit changes to other users in the room via Socket.io
         if (isConnected) {
             socket.current.emit("code-update", {
                 room: roomId,
@@ -486,7 +703,26 @@ export default function HomeScreen() {
                 content: value,
             });
         }
+
+        // Also send via WebSocket for real-time code editing
+        if (wsConnected && wsRef.current?.readyState === WebSocket.OPEN) {
+            const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
+            const language = type === 'html' ? 'html' : type === 'css' ? 'css' : 'javascript';
+
+            const updateMessage: WebSocketMessage = {
+                type: 'codeUpdate',
+                data: {
+                    code: value,
+                    language,
+                    roomId,
+                    userId
+                }
+            };
+
+            wsRef.current.send(JSON.stringify(updateMessage));
+        }
     };
+
 
     // Send chat message
     // Update the sendMessage function

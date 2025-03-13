@@ -1,4 +1,4 @@
-import { Socket } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 
 interface CodeContent {
     html: string;
@@ -9,6 +9,7 @@ interface CodeContent {
 interface User {
     id: string;
     name: string;
+    email: string;
 }
 
 interface Message {
@@ -19,6 +20,14 @@ interface Message {
     timestamp: number;
 }
 
+interface CodeUpdate {
+    type: 'html' | 'css' | 'js';
+    content: string;
+    userId: string;
+    userName: string;
+    timestamp: number;
+}
+
 interface RoomData {
     roomId: string;
     roomName: string;
@@ -26,180 +35,147 @@ interface RoomData {
     codeContent: CodeContent;
     createdAt: number;
     updatedAt: number;
+    users: User[];
 }
 
-/**
- * Creates a mock socket connection
- * @returns A socket connection instance
- */
+// Update the server URL to match your backend port
 export const createSocketConnection = (): Socket => {
-    // Mock socket functions
-    const socket = {
-        emit: (event: string, data: any): void => console.log(`Socket emitted: ${event}`, data),
-        on: (event: string, callback: (data: any) => void): void => { /* implementation */ },
-        off: (event: string, callback: (data: any) => void): void => { /* implementation */ },
-    } as Socket;
+    const socket = io('http://localhost:7400', {
+        transports: ['websocket'],
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+    });
+
+    // Debug events
+    socket.on('connect', () => {
+        console.log('Connected to server with ID:', socket.id);
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error('Connection error:', error);
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log('Disconnected:', reason);
+    });
 
     return socket;
 };
 
-/**
- * Saves room data to the database
- * @param roomData The room data to save
- * @returns A promise that resolves when the save operation is complete
- */
-export const saveRoomData = async (roomData: RoomData): Promise<void> => {
-    try {
-        // Here you would implement your Firebase save logic
-        console.log('Saving room data to Firebase:', roomData);
-        // Example Firebase implementation:
-        // await setDoc(doc(db, 'rooms', roomData.roomId), roomData);
-    } catch (error: any) {
-        console.error('Error saving room data:', error);
-        throw error;
-    }
-};
-
-/**
- * Connects to a room and sets up event listeners
- * @returns A cleanup function to disconnect from the room
- */
-export const connectToRoom = (
+// Add room-users event handler in joinRoom
+export const joinRoom = (
+    socket: Socket,
     roomId: string,
-    setIsConnected: (connected: boolean) => void,
-    addSystemMessage: (message: string) => void,
-    setHtmlCode: (code: string) => void,
-    setCssCode: (code: string) => void,
-    setJsCode: (code: string) => void,
-    setMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void,
-    setUsers: (users: User[] | ((prev: User[]) => User[])) => void,
-    socket: Socket
-): () => void => {
-    console.log(`Connecting to room: ${roomId}`);
+    user: User,
+    callbacks: {
+        onCodeUpdate: (update: CodeUpdate) => void;
+        onUserJoin: (user: User) => void;
+        onUserLeave: (userId: string) => void;
+        onError: (error: string) => void;
+        onRoomUsers?: (users: User[]) => void; // Add this callback
+        onChatMessage?: (message: Message) => void; // Add chat message callback
+    }
+) => {
+    socket.emit('join-room', { roomId, user });
 
-    // Initial room data fetch
-    const fetchRoomData = async (): Promise<void> => {
-        try {
-            // Here you would implement your Firebase fetch logic
-            // Example:
-            // const roomDoc = await getDoc(doc(db, 'rooms', roomId));
-            // if (roomDoc.exists()) {
-            //     const data = roomDoc.data() as RoomData;
-            //     setHtmlCode(data.codeContent.html);
-            //     setCssCode(data.codeContent.css);
-            //     setJsCode(data.codeContent.javascript);
-            // }
-        } catch (error: any) {
-            console.error('Error fetching room data:', error);
-            addSystemMessage('Error loading room data. Please try again.');
-        }
-    };
+    // Add room users handler
+    socket.on('room-users', (users: User[]) => {
+        callbacks.onRoomUsers?.(users);
+    });
 
-    // Connect and fetch initial data
-    setTimeout(async () => {
-        await fetchRoomData();
-        setIsConnected(true);
-        addSystemMessage(`Welcome to room ${roomId}! Share this link with others to collaborate.`);
-    }, 1000);
-
-    // Handle code updates
-    socket.on("code-update", (data: { type: string; content: string; userId: string }) => {
-        switch (data.type) {
-            case "html":
-                setHtmlCode(data.content);
-                break;
-            case "css":
-                setCssCode(data.content);
-                break;
-            case "js":
-                setJsCode(data.content);
-                break;
-            default:
-                console.warn(`Unknown code type: ${data.type}`);
-                break;
+    // Listen for code updates from other users
+    socket.on('code-update', (update: CodeUpdate) => {
+        if (update.userId !== user.id) {
+            callbacks.onCodeUpdate(update);
         }
     });
 
-    // Handle chat messages
-    socket.on("chat-message", (data: Message) => {
-        setMessages((prev) => [...prev, data]);
+    // Listen for chat messages
+    socket.on('chat-message', (message: Message) => {
+        callbacks.onChatMessage?.(message);
     });
 
-    // Handle user joining
-    socket.on("user-joined", (user: User) => {
-        setUsers((prev) => [...prev, user]);
-        addSystemMessage(`${user.name} has joined the room`);
-    });
+    // User join/leave events
+    socket.on('user-joined', callbacks.onUserJoin);
+    socket.on('user-left', callbacks.onUserLeave);
+    socket.on('error', callbacks.onError);
 
-    // Handle save changes
-    socket.on("save-changes", async (data: CodeContent) => {
-        try {
-            const roomData: RoomData = {
-                roomId,
-                roomName: '', // You'll need to pass this from your form
-                password: '', // You'll need to pass this from your form
-                codeContent: data,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-            };
-            await saveRoomData(roomData);
-            addSystemMessage('Changes saved successfully!');
-        } catch (error: any) {
-            addSystemMessage('Error saving changes. Please try again.');
-        }
-    });
-
-    // Cleanup function
+    // Return cleanup function
     return () => {
-        socket.off("code-update");
-        socket.off("chat-message");
-        socket.off("user-joined");
-        socket.off("save-changes");
+        socket.off('code-update');
+        socket.off('user-joined');
+        socket.off('user-left');
+        socket.off('error');
+        socket.off('chat-message');
+        socket.off('room-users');
+        socket.emit('leave-room', { roomId, userId: user.id });
     };
 };
 
-/**
- * Emits code changes to the socket server
- */
 export const emitCodeChange = (
     socket: Socket,
-    type: 'html' | 'css' | 'js',
-    content: string,
     roomId: string,
-    userId: string
-): void => {
+    update: Omit<CodeUpdate, 'timestamp'>
+) => {
+    const codeUpdate: CodeUpdate = {
+        ...update,
+        timestamp: Date.now(),
+    };
+
     socket.emit('code-update', {
-        type,
-        content,
         roomId,
-        userId,
-        timestamp: Date.now()
+        ...codeUpdate
     });
 };
 
-/**
- * Saves changes to Firebase
- */
-export const saveChanges = async (
+// Add function to send chat messages
+export const sendChatMessage = (
+    socket: Socket,
     roomId: string,
-    codeContent: CodeContent,
-    password: string,
-    roomName: string = ''
-): Promise<void> => {
-    try {
-        const roomData: RoomData = {
-            roomId,
-            roomName,
-            password,
-            codeContent,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-        };
+    message: Omit<Message, 'id' | 'timestamp'>
+) => {
+    socket.emit('chat-message', {
+        roomId,
+        message: {
+            ...message,
+            id: generateId(),
+            timestamp: Date.now()
+        }
+    });
+};
 
-        await saveRoomData(roomData);
-        console.log('Changes saved successfully!');
-    } catch (error: any) {
-        console.error('Error saving changes:', error);
-        throw error;
-    }
+export const saveRoomState = async (
+    socket: Socket,
+    roomData: RoomData
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        socket.emit('save-room-state', roomData, (response: { success: boolean; error?: string }) => {
+            if (response.success) {
+                resolve();
+            } else {
+                reject(new Error(response.error || 'Failed to save room state'));
+            }
+        });
+    });
+};
+
+// Utility function to handle code debouncing
+export const debounce = <T extends (...args: any[]) => void>(
+    func: T,
+    wait: number
+): T => {
+    let timeout: NodeJS.Timeout;
+
+    return ((...args: Parameters<T>) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func(...args), wait);
+    }) as T;
+};
+
+// Helper function to generate unique IDs
+const generateId = (): string => {
+    return Math.random().toString(36).substring(2, 15) +
+        Math.random().toString(36).substring(2, 15);
 };

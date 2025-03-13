@@ -90,7 +90,7 @@ export const updateSaveChangesCodeApi = async (data: any) => {
         );
 
         if (response.data.success) {
-            toast.success('Changes saved successfully!');
+            /*  toast.success('Changes saved successfully!'); */
         }
 
         return response.data;
