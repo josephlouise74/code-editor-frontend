@@ -94,7 +94,7 @@ export default function HomeScreen() {
         ""
     );
     const [jsCode, setJsCode] = useState<string>(
-        "document.getElementById('testBtn').addEventListener('click', () => {\n  console.log('Button clicked!');\n  console.error('This is an error');\n  console.warn('This is a warning');\n});"
+        ""
     );
 
     const [showChatSidebar, setShowChatSidebar] = useState<boolean>(false);
