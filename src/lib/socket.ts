@@ -40,7 +40,7 @@ interface RoomData {
 
 // Update the server URL to match your backend port
 export const createSocketConnection = (): Socket => {
-    const socket = io('http://localhost:7400', {
+    const socket = io('https://code-editor-backend-jqof.onrender.com', {
         transports: ['websocket'],
         autoConnect: true,
         reconnection: true,
