@@ -4,7 +4,29 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Terminal, Trash } from "lucide-react";
 
-export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogClass }: any) {
+interface ConsoleLog {
+    id: string;
+    type: 'log' | 'error' | 'warn' | 'info';
+    content: string;
+    timestamp: string;
+}
+
+interface ConsolePanelProps {
+    consoleLogs: ConsoleLog[];
+    clearConsole: () => void;
+    getConsoleLogClass: (type: string) => string;
+}
+
+export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogClass }: ConsolePanelProps) {
+    // Auto scroll to bottom when new logs appear
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [consoleLogs]);
+
     return (
         <ScrollArea className="h-[600px] w-full">
             <div className="border-t dark:border-gray-800">
@@ -32,14 +54,23 @@ export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogC
                         </TooltipProvider>
                     </div>
                 </div>
-                <div className="bg-black text-white p-2 font-mono text-sm min-h-[500px]">
+                <div 
+                    ref={scrollRef}
+                    className="bg-black text-white p-2 font-mono text-sm min-h-[500px] max-h-[500px] overflow-y-auto"
+                >
                     {consoleLogs.length === 0 ? (
                         <div className="text-gray-500 italic p-2">
                             No console output yet. Run your code to see logs here.
                         </div>
                     ) : (
-                        consoleLogs.map((log: any) => (
-                            <div key={log.id} className={`py-1 ${getConsoleLogClass(log.type)}`}>
+                        consoleLogs.map((log: ConsoleLog) => (
+                            <div 
+                                key={log.id} 
+                                className={`py-1 ${getConsoleLogClass(log.type)} break-words`}
+                            >
+                                <span className="text-gray-500 text-xs mr-2">
+                                    {new Date(log.timestamp).toLocaleTimeString()}
+                                </span>
                                 {log.content}
                             </div>
                         ))

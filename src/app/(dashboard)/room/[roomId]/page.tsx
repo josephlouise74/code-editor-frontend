@@ -17,7 +17,7 @@ import { getAllChats, getAllHistoryCode, getRoomData, sendNewMessageInGroupChatA
 import { roomStore } from "@/lib/store/roomStore";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
-import { javascript, javascript as jsLang } from "@codemirror/lang-javascript";
+import { javascript as jsLang } from "@codemirror/lang-javascript";
 import {
     MessageSquare,
     Terminal,
@@ -89,11 +89,11 @@ interface WebSocketMessage {
 
 export default function HomeScreen() {
     // State variables with type annotations
-    const [htmlCode, setHtmlCode] = useState<string>("");
-    const [cssCode, setCssCode] = useState<string>(
+    const [htmlCode, setHtmlCode] = useState<any>("");
+    const [cssCode, setCssCode] = useState<any>(
         ""
     );
-    const [jsCode, setJsCode] = useState<string>(
+    const [jsCode, setJsCode] = useState<any>(
         ""
     );
 
@@ -204,10 +204,6 @@ export default function HomeScreen() {
             previewWindow.document.write(previewDoc);
             previewWindow.document.close();
         }
-    };
-
-    const toggleChatSidebar = () => {
-        setShowChatSidebar(prev => !prev);
     };
 
     const handlePageChange = (page: number) => {
@@ -542,8 +538,73 @@ export default function HomeScreen() {
         }
     };
 
+    // Add this function to handle console interception
+    const createConsoleInterceptor = () => `
+      <script>
+        const originalConsole = {
+          log: console.log,
+          error: console.error,
+          warn: console.warn,
+          info: console.info
+        };
 
-    // Intercept console logs from the iframe
+        function interceptConsole(type) {
+          return function(...args) {
+            originalConsole[type].apply(console, args);
+            const content = args.map(arg => 
+              typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            ).join(' ');
+            
+            window.parent.postMessage({
+              type: 'console',
+              logType: type,
+              content: content
+            }, '*');
+          };
+        }
+
+        console.log = interceptConsole('log');
+        console.error = interceptConsole('error');
+        console.warn = interceptConsole('warn');
+        console.info = interceptConsole('info');
+      </script>
+    `;
+
+    // Update the runCode function
+    const runCode = () => {
+        // Clear previous console logs when running new code
+        setConsoleLogs([]);
+        
+        const source = `
+            <!DOCTYPE html>
+            <html lang="en">
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <title>Live Preview</title>
+                    ${createConsoleInterceptor()}
+                    <style>${cssCode}</style>
+                </head>
+                <body>
+                    ${htmlCode}
+                    <script>
+                        try {
+                            ${jsCode}
+                        } catch (error) {
+                            console.error(error.message);
+                        }
+                    </script>
+                </body>
+            </html>
+        `;
+        
+        if (iframeRef.current) {
+            const iframe = iframeRef.current;
+            iframe.srcdoc = source;
+        }
+    };
+
+    // Update the useEffect for console message handling
     useEffect(() => {
         const handleConsoleMessage = (event: MessageEvent) => {
             if (event.data && event.data.type === "console") {
@@ -589,119 +650,140 @@ export default function HomeScreen() {
         };
     }, [params.roomId]);
 
-    // Update the live preview with a debounce and console intercept script
-    // Update the live preview with a debounce and console intercept script
-    // Update the live preview with a debounce and console intercept script
-    // Update the live preview with a debounce and console intercept script
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            const consoleInterceptScript = `
-        <script>
-          const originalConsole = console;
-          console = {
-            log: function() {
-              originalConsole.log.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'log',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            },
-            error: function() {
-              originalConsole.error.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'error',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            },
-            warn: function() {
-              originalConsole.warn.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'warn',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            },
-            info: function() {
-              originalConsole.info.apply(originalConsole, arguments);
-              window.parent.postMessage({
-                type: 'console',
-                logType: 'info',
-                content: Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
-              }, '*');
-            }
-          };
-          
-          // Capture and report global errors
-          window.addEventListener('error', function(event) {
-            console.error('JavaScript error:', event.message);
-            return false;
-          });
-        </script>
-      `;
+    
 
-            const source = `
-        <html>
-          <head>
-            <style>${cssCode}</style>
-            ${consoleInterceptScript}
-          </head>
-          <body>
-            ${htmlCode}
-            <script>
-              // Wrap all JavaScript code in a try-catch block
-              try {
-                // Safe element access function
-                function getElement(id) {
-                  const el = document.getElementById(id);
-                  if (!el) {
-                    return null;
-                  }
-                  return el;
-                }
-                
-                // Execute code when DOM is ready
-                document.addEventListener('DOMContentLoaded', function() {
-                  try {
-                    // Your user JavaScript code
-                    ${jsCode}
-                  } catch (error) {
-                    console.error('JavaScript execution error:', error.message);
-                  }
-                  
-                  // Removed the "Page fully loaded" console log
-                });
-              } catch (outerError) {
-                console.error('Fatal JavaScript error:', outerError.message);
-              }
-            </script>
-          </body>
-        </html>
-      `;
-            setSrcDoc(source);
-        }, 250);
-        return () => clearTimeout(timeout);
-    }, [htmlCode, cssCode, jsCode]);
-    // Share the room URL for collaborative editing
-    const handleShareRoom = async () => {
-        const shareUrl = window.location.href;
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch (error) {
-            console.error('Failed to copy share URL:', error);
-        }
-    };
+   // Update the live preview with a debounce and console intercept script
+useEffect(() => {
+    const timeout = setTimeout(() => {
+        const source = `
+            <!DOCTYPE html>
+            <html lang="en">
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <title>Live Preview</title>
+                    
+                    <!-- Console Interceptor -->
+                    <script>
+                        // Set up console interceptor before any user code runs
+                        const originalConsole = console;
+                        console = {
+                            log: function() {
+                                originalConsole.log.apply(originalConsole, arguments);
+                                window.parent.postMessage({
+                                    type: 'console',
+                                    logType: 'log',
+                                    content: Array.from(arguments).map(arg => 
+                                        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                                    ).join(' ')
+                                }, '*');
+                            },
+                            error: function() {
+                                originalConsole.error.apply(originalConsole, arguments);
+                                window.parent.postMessage({
+                                    type: 'console',
+                                    logType: 'error',
+                                    content: Array.from(arguments).map(arg => 
+                                        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                                    ).join(' ')
+                                }, '*');
+                            },
+                            warn: function() {
+                                originalConsole.warn.apply(originalConsole, arguments);
+                                window.parent.postMessage({
+                                    type: 'console',
+                                    logType: 'warn',
+                                    content: Array.from(arguments).map(arg => 
+                                        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                                    ).join(' ')
+                                }, '*');
+                            },
+                            info: function() {
+                                originalConsole.info.apply(originalConsole, arguments);
+                                window.parent.postMessage({
+                                    type: 'console',
+                                    logType: 'info',
+                                    content: Array.from(arguments).map(arg => 
+                                        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                                    ).join(' ')
+                                }, '*');
+                            }
+                        };
 
-    // Handle code changes and emit to other users
+                        // Global error handler
+                        window.onerror = function(msg, url, line, col, error) {
+                            console.error(\`\${msg} (at line \${line}:\${col})\`);
+                            return false;
+                        };
+                        
+                        // localStorage polyfill
+                        try {
+                            window.localStorage.getItem('test');
+                        } catch (e) {
+                            console.info('localStorage not available, using polyfill');
+                            const createStoragePolyfill = () => {
+                                const storage = {};
+                                return {
+                                    getItem: (key) => storage[key] || null,
+                                    setItem: (key, value) => { storage[key] = value.toString(); },
+                                    removeItem: (key) => { delete storage[key]; },
+                                    clear: () => { Object.keys(storage).forEach(key => { delete storage[key]; }) },
+                                    key: (index) => Object.keys(storage)[index] || null,
+                                    length: Object.keys(storage).length
+                                };
+                            };
+                            window.localStorage = createStoragePolyfill();
+                            window.sessionStorage = createStoragePolyfill();
+                        }
+                    </script>
+                    
+                    <style>${cssCode}</style>
+                </head>
+                <body>
+                    ${htmlCode}
+                    
+                    <script>
+                        // Wait for DOM to be fully loaded before executing user code
+                        document.addEventListener('DOMContentLoaded', function() {
+                            try {
+                                // Execute user's JavaScript with proper error handling
+                                (function() {
+                                    ${jsCode}
+                                })();
+                            } catch (error) {
+                                console.error('Script execution error:', error.message);
+                            }
+                        });
+                        
+                        // Also execute immediately for code that doesn't need DOM ready
+                        try {
+                            (function() {
+                                ${jsCode}
+                            })();
+                        } catch (error) {
+                            // Silent catch for immediate execution
+                        }
+                    </script>
+                </body>
+            </html>
+        `;
+        setSrcDoc(source);
+    }, 250);
+
+    return () => clearTimeout(timeout);
+}, [htmlCode, cssCode, jsCode]);
+
+    // Simplify handleCodeChange to avoid formatting conflicts
     const handleCodeChange = (type: 'html' | 'css' | 'js', value: string) => {
-        if (type === "html") setHtmlCode(value);
-        if (type === "css") setCssCode(value);
-        if (type === "js") setJsCode(value);
+        if (type === "html") {
+            setHtmlCode(value);
+        } else if (type === "css") {
+            setCssCode(value);
+        } else if (type === "js") {
+            setJsCode(value);
+        }
 
-        // Emit changes to other users in the room via Socket.io
+        // Emit changes via sockets
         if (isConnected) {
             socket.current.emit("code-update", {
                 room: roomId,
@@ -710,7 +792,6 @@ export default function HomeScreen() {
             });
         }
 
-        // Also send via WebSocket for real-time code editing
         if (wsConnected && wsRef.current?.readyState === WebSocket.OPEN) {
             const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
             const language = type === 'html' ? 'html' : type === 'css' ? 'css' : 'javascript';
@@ -729,10 +810,23 @@ export default function HomeScreen() {
         }
     };
 
+    // Update the saveAndRunCode function
+    const saveAndRunCode = () => {
+        setConsoleLogs([]);
+        runCode();
+    };
 
-    // Send chat message
-    // Update the sendMessage function
-    // Update the messages state to use the proper type
+    // Share the room URL for collaborative editing
+    const handleShareRoom = async () => {
+        const shareUrl = window.location.href;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (error) {
+            console.error('Failed to copy share URL:', error);
+        }
+    };
 
     // Update the getAllDataChats function
     const getAllDataChats = async (roomId: string) => {
@@ -811,19 +905,6 @@ export default function HomeScreen() {
     };
 
     // Save and run code
-    const saveAndRunCode = () => {
-        // In a real implementation, save to a database if needed
-        if (iframeRef.current) {
-            const iframe = iframeRef.current;
-            iframe.src = "about:blank";
-            setTimeout(() => {
-                iframe.srcdoc = srcDoc;
-            }, 50);
-        }
-        setConsoleLogs([]);
-    };
-
-
     const handleSaveChanges = async () => {
         try {
             setIsSaving(true);

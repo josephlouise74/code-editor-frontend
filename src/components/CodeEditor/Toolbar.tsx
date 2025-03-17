@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { ShareDialog } from "./ShareDialog";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 
 
@@ -83,6 +84,19 @@ export default function ToolBar({
 
     const handleShareRoom = () => {
         setIsShareDialogOpen(true);
+    };
+
+    const router = useRouter(); // Add this hook
+
+    // Add leave room function
+    const handleLeaveRoom = () => {
+        // Remove all specific items from localStorage
+        localStorage.removeItem('room_data');
+        localStorage.removeItem('participantEmail');
+        localStorage.removeItem('participantName');
+        localStorage.removeItem('role');
+        localStorage.removeItem('room_token');
+        router.push('/');
     };
 
     return (
@@ -198,21 +212,22 @@ export default function ToolBar({
                             <p>Save Changes</p>
                         </TooltipContent>
                     </Tooltip>
-                    {/*   <Tooltip>
+                    <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
-                                onClick={() => setIsFullScreen(!isFullScreen)}
-                                variant="outline"
+                                onClick={handleLeaveRoom}
+                                variant="destructive"
                                 size="sm"
                                 className="h-8"
                             >
-                                {isFullScreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                                <X size={16} className="mr-1" />
+                                <span className="hidden md:inline">Leave Room</span>
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                            <p>{isFullScreen ? "Exit Fullscreen" : "Fullscreen"}</p>
+                            <p>Leave Room</p>
                         </TooltipContent>
-                    </Tooltip> */}
+                    </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
