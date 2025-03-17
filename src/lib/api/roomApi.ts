@@ -7,7 +7,7 @@ interface CreateRoomData {
     email: string;
 }
 
-const baseUrl = "http://localhost:7400/api/v1";
+const baseUrl =  "https://code-editor-backend-jqof.onrender.com/api/v1";
 
 
 /* const baseUrl = "http://localhost:7400/api/v1"; */
