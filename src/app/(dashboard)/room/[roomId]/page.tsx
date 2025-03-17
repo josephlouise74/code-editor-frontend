@@ -270,7 +270,7 @@ export default function HomeScreen() {
         if (!currentRoomId || !token) return;
 
         // Create WebSocket connection
-        const ws = new WebSocket('ws://localhost:7400');
+        const ws = new WebSocket('ws://code-editor-backend-jqof.onrender.com');
         wsRef.current = ws;
 
         // Connection opened
