@@ -17,7 +17,7 @@ export function ShareDialog({ isOpen, onClose, roomId, token }: ShareDialogProps
 
     // Generate share URL with participant parameter
     const shareUrl = React.useMemo(() => {
-        const baseUrl = "https://code-editor-frontend-navy.vercel.app";
+        const baseUrl = "http://localhost:3000/";
         const url = new URL(`${baseUrl}/room/${roomId}`);
         url.searchParams.set('token', token);
         url.searchParams.set('participant', 'true');

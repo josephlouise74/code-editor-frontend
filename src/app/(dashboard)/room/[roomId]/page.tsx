@@ -270,7 +270,7 @@ export default function HomeScreen() {
         if (!currentRoomId || !token) return;
 
         // Create WebSocket connection
-        const ws = new WebSocket('ws://code-editor-backend-jqof.onrender.com');
+        const ws = new WebSocket('ws://localhost:7400');
         wsRef.current = ws;
 
         // Connection opened
@@ -415,11 +415,10 @@ export default function HomeScreen() {
         // Initialize socket if not already done
         if (!socket.current) {
             // Connect to your socket server
-            socket.current = io("https://code-editor-backend-jqof.onrender.com", {
+            socket.current = io("http://localhost:3001", {
                 withCredentials: true,
                 transports: ["websocket"],
             });
-            
 
             // Handle connection event
             socket.current.on("connect", () => {
