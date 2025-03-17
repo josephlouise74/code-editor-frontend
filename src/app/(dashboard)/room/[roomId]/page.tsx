@@ -415,10 +415,11 @@ export default function HomeScreen() {
         // Initialize socket if not already done
         if (!socket.current) {
             // Connect to your socket server
-            socket.current = io("http://localhost:3001", {
+            socket.current = io("https://code-editor-backend-jqof.onrender.com", {
                 withCredentials: true,
                 transports: ["websocket"],
             });
+            
 
             // Handle connection event
             socket.current.on("connect", () => {

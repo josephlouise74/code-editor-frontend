@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client';
 class SocketClient {
     private static instance: SocketClient;
     private socket: Socket | null = null;
-    private readonly SOCKET_URL = 'http://localhost:7400';
+    private readonly SOCKET_URL = 'https://code-editor-backend-jqof.onrender.com';
 
     private constructor() {
         this.initializeSocket();
