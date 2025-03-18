@@ -172,7 +172,7 @@ interface ChatMessageData {
     message: string;
 }
 
-export const sendNewMessageInGroupChatApiRequest = async (data: ChatMessageData) => {
+export const sendNewMessageInGroupChatApiRequest = async (data: any) => {
     try {
         const response = await axios.post(
             `${baseUrl}/room/send-message`,

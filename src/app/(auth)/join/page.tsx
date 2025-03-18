@@ -77,7 +77,6 @@ const JoinRoomForm = observer(() => {
             const response = await roomStore.joinRoom(data);
             if (response && response.roomId) {
                 form.reset();
-                // Store host value in localStorage
                 localStorage.setItem('host', 'Host');
                 router.push(`/room/${response.roomId}?token=${encodeURIComponent(response.token)}&host=${encodeURIComponent('Host')}`);
             }
@@ -87,14 +86,14 @@ const JoinRoomForm = observer(() => {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-white dark:bg-gray-900 p-4">
-            <Card className="w-full max-w-md border-2 border-black dark:border-gray-800">
-                <CardHeader className="space-y-1 pb-6 border-b border-black dark:border-gray-800">
-                    <CardTitle className="text-2xl font-bold text-center text-black dark:text-white">
-                        Join Room
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+            <Card className="w-full max-w-md border-2 border-red-600 dark:border-red-800 shadow-lg transition-all duration-300 hover:shadow-xl">
+                <CardHeader className="space-y-1 pb-6 border-b border-red-200 dark:border-red-900 bg-gradient-to-r from-red-500 to-red-700 text-white">
+                    <CardTitle className="text-2xl font-bold text-center">
+                        ssss
                     </CardTitle>
                 </CardHeader>
-                <CardContent className="pt-6">
+                <CardContent className="pt-6 bg-white dark:bg-gray-800">
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                             <FormField
@@ -102,14 +101,14 @@ const JoinRoomForm = observer(() => {
                                 name="accessCode"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <Label className="text-black dark:text-white">Room Code</Label>
+                                        <Label className="text-gray-800 dark:text-gray-200 font-medium">Room Code</Label>
                                         <FormControl>
                                             <div className="relative">
-                                                <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-black dark:text-gray-400" size={20} />
+                                                <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-red-500 dark:text-red-400" size={20} />
                                                 <Input
                                                     {...field}
                                                     placeholder="Enter room code"
-                                                    className="pl-10 border-2 border-black dark:border-gray-800 focus:ring-black dark:focus:ring-gray-700"
+                                                    className="pl-10 border-2 border-gray-300 dark:border-gray-700 focus:border-red-500 focus:ring-2 focus:ring-red-200 dark:focus:ring-red-900 transition-all duration-200 bg-white dark:bg-gray-700 text-black dark:text-white"
                                                 />
                                             </div>
                                         </FormControl>
@@ -123,15 +122,15 @@ const JoinRoomForm = observer(() => {
                                 name="password"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <Label className="text-black dark:text-white">Password</Label>
+                                        <Label className="text-gray-800 dark:text-gray-200 font-medium">Password</Label>
                                         <FormControl>
                                             <div className="relative">
-                                                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-black dark:text-gray-400" size={20} />
+                                                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-red-500 dark:text-red-400" size={20} />
                                                 <Input
                                                     {...field}
                                                     type="password"
                                                     placeholder="Enter room password"
-                                                    className="pl-10 border-2 border-black dark:border-gray-800 focus:ring-black dark:focus:ring-gray-700"
+                                                    className="pl-10 border-2 border-gray-300 dark:border-gray-700 focus:border-red-500 focus:ring-2 focus:ring-red-200 dark:focus:ring-red-900 transition-all duration-200 bg-white dark:bg-gray-700 text-black dark:text-white"
                                                 />
                                             </div>
                                         </FormControl>
@@ -142,7 +141,7 @@ const JoinRoomForm = observer(() => {
 
                             <Button
                                 type="submit"
-                                className="w-full h-11 text-base font-medium bg-black hover:bg-gray-800 text-white dark:bg-white dark:text-black dark:hover:bg-gray-200 transition-colors"
+                                className="w-full h-12 text-base font-medium bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white dark:from-red-500 dark:to-red-600 dark:hover:from-red-600 dark:hover:to-red-700 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] rounded-md shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100"
                                 disabled={roomStore.isLoading}
                             >
                                 {roomStore.isLoading ? (
@@ -154,12 +153,17 @@ const JoinRoomForm = observer(() => {
                                     'Join Room'
                                 )}
                             </Button>
+
+                            <div className="text-center mt-4">
+                                <a href="/" className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors duration-200 underline-offset-2 hover:underline">
+                                    Back to Home
+                                </a>
+                            </div>
                         </form>
                     </Form>
                 </CardContent>
             </Card>
         </div>
-
     );
 });
 

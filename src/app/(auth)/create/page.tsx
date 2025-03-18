@@ -8,11 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Lock, Hash } from "lucide-react";
+import { Lock, Hash, Loader2, Mail, ArrowRight } from "lucide-react";
 import { createRoomApi } from "@/lib/api/roomApi";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { theme } from "@/lib/theme";
+import Image from "next/image";
+import unicode from '../../../../public/unicode.png';
 
 // Update the schema to include email
 const roomSchema = z.object({
@@ -61,114 +64,136 @@ export default function CreateRoomForm() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-            <Card className="w-full max-w-md">
-                <CardHeader className="space-y-1">
-                    <CardTitle className="text-2xl font-bold text-center">Create Room</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Form {...form}>
-                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            <FormField
-                                control={form.control}
-                                name="roomName"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <Label>Room Name</Label>
-                                        <FormControl>
-                                            <div className="relative">
-                                                <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={20} />
-                                                <Input
-                                                    {...field}
-                                                    placeholder="Enter room name"
-                                                    className="pl-10"
-                                                />
-                                            </div>
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+        <div className="flex min-h-screen items-center justify-center bg-white p-4">
+            <div className="w-full max-w-md">
+                <Card className={`border-2 ${theme.borderPrimary} shadow-lg ${theme.shadowPrimary} bg-black`}>
+                    <CardHeader className={`pb-6 border-b ${theme.borderPrimary}`}>
+                        <div className="flex justify-center">
+                            <div className="relative h-28 w-28">
+                                <Image
+                                    src={unicode}
+                                    alt="Unicode Logo"
+                                    className="object-contain"
+                                    fill
+                                    priority
+                                />
+                            </div>
+                        </div>
+                        <CardTitle className="text-3xl font-extrabold text-center">
+                            <span className="text-white">
+                                Create Room
+                            </span>
+                        </CardTitle>
+                    </CardHeader>
 
-                            <FormField
-                                control={form.control}
-                                name="password"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <Label>Password</Label>
-                                        <FormControl>
-                                            <div className="relative">
-                                                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={20} />
-                                                <Input
-                                                    {...field}
-                                                    type="password"
-                                                    placeholder="Enter password"
-                                                    className="pl-10"
-                                                />
-                                            </div>
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                    <CardContent className="pt-8">
+                        <Form {...form}>
+                            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                                <FormField
+                                    control={form.control}
+                                    name="roomName"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label className="text-white font-medium">Room Name</Label>
+                                            <FormControl>
+                                                <div className="relative">
+                                                    <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
+                                                    <Input
+                                                        {...field}
+                                                        placeholder="Enter room name"
+                                                        className="pl-10 border-2 border-gray-300 focus:border-red-500 focus:ring-red-500 bg-white text-gray-800 placeholder:text-gray-400 rounded-md"
+                                                    />
+                                                </div>
+                                            </FormControl>
+                                            <FormMessage className="text-red-400" />
+                                        </FormItem>
+                                    )}
+                                />
 
-                            {/* Add the new email field */}
-                            <FormField
-                                control={form.control}
-                                name="email"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <Label>Email</Label>
-                                        <FormControl>
-                                            <div className="relative">
-                                                <svg
-                                                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                                                    width="20"
-                                                    height="20"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                >
-                                                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                                                    <polyline points="22,6 12,13 2,6" />
-                                                </svg>
-                                                <Input
-                                                    {...field}
-                                                    type="email"
-                                                    placeholder="Enter your email"
-                                                    className="pl-10"
-                                                />
-                                            </div>
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                                <FormField
+                                    control={form.control}
+                                    name="password"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label className="text-white font-medium">Password</Label>
+                                            <FormControl>
+                                                <div className="relative">
+                                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
+                                                    <Input
+                                                        {...field}
+                                                        type="password"
+                                                        placeholder="Enter password"
+                                                        className="pl-10 border-2 border-gray-300 focus:border-red-500 focus:ring-red-500 bg-white text-gray-800 placeholder:text-gray-400 rounded-md"
+                                                    />
+                                                </div>
+                                            </FormControl>
+                                            <FormMessage className="text-red-400" />
+                                        </FormItem>
+                                    )}
+                                />
 
+                                <FormField
+                                    control={form.control}
+                                    name="email"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label className="text-white font-medium">Email</Label>
+                                            <FormControl>
+                                                <div className="relative">
+                                                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
+                                                    <Input
+                                                        {...field}
+                                                        type="email"
+                                                        placeholder="Enter your email"
+                                                        className="pl-10 border-2 border-gray-300 focus:border-red-500 focus:ring-red-500 bg-white text-gray-800 placeholder:text-gray-400 rounded-md"
+                                                    />
+                                                </div>
+                                            </FormControl>
+                                            <FormMessage className="text-red-400" />
+                                        </FormItem>
+                                    )}
+                                />
 
-                            <Button type="submit" className="w-full" disabled={isLoading}>
-                                {isLoading ? "Creating..." : "Create Room"}
-                            </Button>
-                        </form>
-                    </Form>
+                                <Button
+                                    type="submit"
+                                    className="w-full h-12 text-base font-bold bg-red-600 hover:bg-red-700 text-white hover:text-gray-100 transition-all duration-300 rounded-md shadow-md flex items-center justify-center gap-2 group"
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? (
+                                        <>
+                                            <Loader2 className="h-5 w-5 animate-spin" />
+                                            <span>Creating...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="transition-transform group-hover:scale-105">Create Room</span>
+                                            <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                                        </>
+                                    )}
+                                </Button>
+                            </form>
+                        </Form>
 
-                    {/* Add this new section */}
-                    <div className="mt-6 text-center">
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Don't have a room?{' '}
-                            <Link
-                                href="/"
-                                className="text-black hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 font-medium"
-                            >
-                                Join room
-                            </Link>
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
+                        <div className="mt-8 text-center">
+                            <p className="text-gray-300">
+                                Already have a room?{' '}
+                                <Link
+                                    href="/"
+                                    className={`${theme.linkText} ${theme.linkHover} font-medium relative ${theme.linkUnderline}`}
+                                >
+                                    Join a room
+                                </Link>
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <div className="mt-4 text-center">
+                    <p className="text-xs text-gray-500">
+                        Made with ❤️ for the best collaboration experience
+                    </p>
+                </div>
+            </div>
         </div>
     );
 }

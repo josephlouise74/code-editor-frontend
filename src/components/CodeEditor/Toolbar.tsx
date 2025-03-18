@@ -22,7 +22,6 @@ import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 
-
 /**
  * ToolBar component for the code editor
  * 
@@ -99,13 +98,33 @@ export default function ToolBar({
         router.push('/');
     };
 
+    // Handle toggling chat sidebar
+    const handleToggleChatSidebar = () => {
+        if (showChatSidebar) {
+            setShowChatSidebar(false);
+        } else {
+            setShowChatSidebar(true);
+            setShowHistory(false);
+        }
+    };
+
+    // Handle toggling history
+    const handleToggleHistory = () => {
+        if (showHistory) {
+            setShowHistory(false);
+        } else {
+            setShowHistory(true);
+            setShowChatSidebar(false);
+        }
+    };
+
     return (
         <>
             {/* Top Toolbar */}
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-background z-10">
                 <div className="flex items-center">
                     <Code className="mr-2 h-6 w-6" />
-                    <h1 className="text-xl font-bold">Code Editor</h1>
+                    <h1 className="text-xl font-bold"><span>Uni</span><span className="text-red-600">Code </span> </h1>
                     {isConnected && (
                         <Badge variant="outline" className="ml-2">
                             Room: {roomId.slice(0, 6)}
@@ -176,7 +195,7 @@ export default function ToolBar({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
-                                onClick={() => setShowChatSidebar(!showChatSidebar)}
+                                onClick={handleToggleChatSidebar}
                                 variant={showChatSidebar ? "default" : "outline"}
                                 size="sm"
                                 className="h-8"
@@ -233,7 +252,7 @@ export default function ToolBar({
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setShowHistory(!showHistory)}
+                                onClick={handleToggleHistory}
                                 className={cn("h-8", showHistory && "bg-accent")}
                             >
                                 <History className="h-4 w-4 mr-1" />

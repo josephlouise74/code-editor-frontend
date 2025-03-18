@@ -15,10 +15,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAllChats, getAllHistoryCode, getRoomData, sendNewMessageInGroupChatApiRequest, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
 import { roomStore } from "@/lib/store/roomStore";
+import { uploadImage } from "@/lib/supabase/supabase";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
 import { javascript as jsLang } from "@codemirror/lang-javascript";
 import {
+    Image,
+    Loader2,
     MessageSquare,
     Terminal,
     Trash,
@@ -28,25 +31,11 @@ import {
 import { nanoid } from "nanoid";
 import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { io } from "socket.io-client";
 
-// Define interfaces at the top of the file
-interface Message {
-    id: string;
-    sender: string;
-    content: string;
-    timestamp: string;
-    system?: boolean;
-    isSelf?: boolean;
-}
 
-interface User {
-    id: string;
-    name: string;
-    online: boolean;
-}
 
 interface ConsoleLog {
     id: string;
@@ -87,6 +76,19 @@ interface WebSocketMessage {
     };
 }
 
+
+// Loading component for better UX
+const LoadingScreen = () => (
+    <div className="flex flex-col items-center justify-center h-screen w-full bg-background">
+        <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+        <h2 className="text-2xl font-semibold mb-3">Loading Code Editor</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+            Setting up your collaborative workspace. This may take a moment...
+        </p>
+    </div>
+);
+
+
 export default function HomeScreen() {
     // State variables with type annotations
     const [htmlCode, setHtmlCode] = useState<any>("");
@@ -96,6 +98,8 @@ export default function HomeScreen() {
     const [jsCode, setJsCode] = useState<any>(
         ""
     );
+    // Add loading state
+    const [isLoading, setIsLoading] = useState<boolean>(false);
 
     const [showChatSidebar, setShowChatSidebar] = useState<boolean>(false);
     const [srcDoc, setSrcDoc] = useState<any>("");
@@ -109,7 +113,7 @@ export default function HomeScreen() {
     const [messageInput, setMessageInput] = useState<string>("");
     const [layout, setLayout] = useState<"split" | "editor" | "preview">("split");
     const [showConsole, setShowConsole] = useState<boolean>(true);
-    // Add this with other state declarations
+    // Add this with other state declarationsco
     const [isMessageSending, setIsMessageSending] = useState<boolean>(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const socket = useRef<typeof mockSocket>(mockSocket);
@@ -121,6 +125,8 @@ export default function HomeScreen() {
     const [isSaving, setIsSaving] = useState(false);
 
     const [userData, setUserData] = useState<any>(null)
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
+
     // Update your state declarations
     const [codeHistory, setCodeHistory] = useState<any>({
         roomId: '',
@@ -172,7 +178,8 @@ export default function HomeScreen() {
         toast.success('Code version restored successfully');
     };
 
-    const fetchHistory = async (page = 1, limit = 10) => {
+    // Optimized history fetching
+    const fetchHistory = useCallback(async (page = 1, limit = 10) => {
         try {
             if (!roomId) {
                 console.warn('Room ID is not available');
@@ -180,7 +187,7 @@ export default function HomeScreen() {
             }
 
             const historyCodeResponse = await getAllHistoryCode(roomId, page, limit);
-            if (historyCodeResponse?.success) {
+            if (historyCodeResponse?.success && historyCodeResponse?.data?.history) {
                 setCodeHistory(historyCodeResponse.data);
             } else {
                 console.warn('No history data available');
@@ -189,7 +196,7 @@ export default function HomeScreen() {
             console.error('Error fetching code history:', error);
             toast.error('Failed to load code history');
         }
-    };
+    }, [roomId]);
 
     const handlePreviewVersion = (version: any) => {
         const { html, css, javascript } = version.codeContent;
@@ -214,13 +221,10 @@ export default function HomeScreen() {
         fetchHistory(1, limit);
     };
 
-    const getRoomDataFetch = async (roomId: string, token: string) => {
+    // Optimized room data fetching
+    const getRoomDataFetch = useCallback(async (roomId: string, token: string) => {
         try {
-            const prepareData = {
-                roomId,
-                token
-            };
-
+            const prepareData = { roomId, token };
             const response = await getRoomData(prepareData);
 
             if (!response?.success || !response?.data) {
@@ -263,7 +267,22 @@ export default function HomeScreen() {
             console.error('Error fetching room data:', error);
             return false;
         }
+    }, []);
+
+    // Add this function to handle new messages
+    const generateMessageId = (): string => {
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substring(2, 9);
+        return `${timestamp}_${random}`;
     };
+
+    const handleNewMessage = useCallback((message: any) => {
+        if (!showChatSidebar) {
+            toast.info(`New message from ${message.userName}`);
+        }
+    }, [showChatSidebar]);
+
+
     // Add WebSocket connection effect
     useEffect(() => {
         const currentRoomId = params.roomId as string;
@@ -359,6 +378,7 @@ export default function HomeScreen() {
 
         const initializeRoom = async () => {
             try {
+                setIsLoading(true);
                 setRoomId(currentRoomId);
 
                 // Fetch room data first
@@ -373,15 +393,16 @@ export default function HomeScreen() {
                 }
 
                 // Set username and connect to room
-                const generatedUsername = `User-${nanoid(4)}`;
-                console.log("userssss2", users)
+
                 connectToRoom(currentRoomId);
                 fetchHistory()
                 // Fetch and store history data
                 try {
+                    setIsLoading(true);
                     const historyCodeResponse = await getAllHistoryCode(currentRoomId);
                     console.log("hostName", hostName)
                     console.log("hs", historyCodeResponse.data.history)
+                    setIsLoading(false);
                     if (historyCodeResponse?.success && historyCodeResponse?.data?.history) {
                         setCodeHistory(historyCodeResponse.data.history);
                     } else {
@@ -389,10 +410,13 @@ export default function HomeScreen() {
                     }
                 } catch (error) {
                     console.error('Error fetching code history:', error);
+                    setIsLoading(false);
                     toast.error('Failed to load code history');
+
                 }
 
             } catch (error) {
+                setIsLoading(false);
                 console.error('Error initializing room:', error);
                 toast.error('Failed to initialize room');
             }
@@ -419,6 +443,8 @@ export default function HomeScreen() {
                 withCredentials: true,
                 transports: ["websocket"],
             });
+
+
 
             // Handle connection event
             socket.current.on("connect", () => {
@@ -451,7 +477,7 @@ export default function HomeScreen() {
                 setMessages(prev => [
                     ...prev,
                     {
-                        id: nanoid(),
+                        id: generateMessageId(),
                         sender: "System",
                         content: `Connected to room ${roomId}`,
                         timestamp: new Date().toISOString(),
@@ -471,57 +497,98 @@ export default function HomeScreen() {
             });
 
             // Handle chat messages
-            socket.current.on("chat-message", (data) => {
-                setMessages(prev => [...prev, data]);
+            socket.current.on("chat-message", (message) => {
+                // Only add the message if it's not from the current user
+                // or if we don't already have it in our messages array
+                setMessages(prev => {
+                    // Check if message already exists to prevent duplicates
+                    const exists = prev.some(m => m.id === message.id);
+                    if (exists) return prev;
+
+                    // Add isSelf flag for UI rendering
+                    const isSelf = message.userId === userData.id || message.userId === userData.accessCode;
+                    return [...prev, { ...message, isSelf }];
+                });
+            });
+
+            // Handle chat history
+            socket.current.on("chat-history", (messages) => {
+                // Process chat history
+                const processedMessages = messages.map((message: any) => ({
+                    ...message,
+                    isSelf: message.userId === userData.id || message.userId === userData.accessCode
+                }));
+                setMessages(processedMessages);
             });
 
             // Handle user joined events
             socket.current.on("user-joined", (user) => {
-                setUsers(prev => [...prev, { ...user, online: true }]);
-                setMessages(prev => [
-                    ...prev,
-                    {
-                        id: nanoid(),
-                        sender: "System",
-                        content: `${user.name} has joined the room`,
-                        timestamp: new Date().toISOString(),
-                        system: true,
-                    },
-                ]);
+                setUsers(prev => {
+                    // Check if user already exists
+                    const exists = prev.some(u => u.id === user.id);
+                    if (exists) return prev;
+                    return [...prev, { ...user, online: true }];
+                });
+
+                // Add system message for user joining
+                const joinMessage = {
+                    id: generateMessageId(),
+                    content: `${user.name} joined the room`,
+                    userId: 'system',
+                    userName: 'System',
+                    timestamp: Date.now(),
+                    system: true
+                };
+                setMessages(prev => [...prev, joinMessage]);
             });
 
             // Handle user left events
             socket.current.on("user-left", (userId) => {
-                setUsers(prev => {
-                    const updatedUsers = [...prev];
-                    const userIndex = updatedUsers.findIndex(u => u.id === userId);
+                // Find the user who left
+                const user = users.find(u => u.id === userId);
 
-                    if (userIndex !== -1) {
-                        const userName = updatedUsers[userIndex].name;
-                        updatedUsers[userIndex] = {
-                            ...updatedUsers[userIndex],
-                            online: false
-                        };
+                // Update users list
+                setUsers(prev => prev.map(u =>
+                    u.id === userId ? { ...u, online: false } : u
+                ));
 
-                        setMessages(prev => [
-                            ...prev,
-                            {
-                                id: nanoid(),
-                                sender: "System",
-                                content: `${userName} has left the room`,
-                                timestamp: new Date().toISOString(),
-                                system: true,
-                            },
-                        ]);
-                    }
-
-                    return updatedUsers;
-                });
+                // Add system message for user leaving
+                if (user) {
+                    const leaveMessage = {
+                        id: generateMessageId(),
+                        content: `${user.name} left the room`,
+                        userId: 'system',
+                        userName: 'System',
+                        timestamp: Date.now(),
+                        system: true
+                    };
+                    setMessages(prev => [...prev, leaveMessage]);
+                }
             });
 
             // Handle room users list
-            socket.current.on("room-users", (users) => {
-                setUsers(users.map((user: any) => ({ ...user, online: true })));
+            socket.current.on("room-users", (roomUsers) => {
+                setUsers(roomUsers.map((user: any) => ({ ...user, online: true })));
+            });
+
+            // Handle code updates
+            socket.current.on("code-update", (update) => {
+                if (update.userId !== userData.id) {
+                    if (update.type === 'html') {
+                        setHtmlCode(update.content);
+                    } else if (update.type === 'css') {
+                        setCssCode(update.content);
+                    } else if (update.type === 'js') {
+                        setJsCode(update.content);
+                    }
+                }
+            });
+
+            // Handle errors
+            socket.current.on("error", (error) => {
+                console.error("Socket error:", error);
+                const errorMessage = typeof error === 'string' ? error : error.message || 'Unknown error';
+                toast.error("Connection error: " + errorMessage);
             });
 
             // Handle disconnect
@@ -539,42 +606,43 @@ export default function HomeScreen() {
     };
 
     // Add this function to handle console interception
-    const createConsoleInterceptor = () => `
-      <script>
-        const originalConsole = {
-          log: console.log,
-          error: console.error,
-          warn: console.warn,
-          info: console.info
-        };
+    // Memoized console interceptor
+    const createConsoleInterceptor = useCallback(() => `
+  <script>
+    const originalConsole = {
+      log: console.log,
+      error: console.error,
+      warn: console.warn,
+      info: console.info
+    };
 
-        function interceptConsole(type) {
-          return function(...args) {
-            originalConsole[type].apply(console, args);
-            const content = args.map(arg => 
-              typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-            ).join(' ');
-            
-            window.parent.postMessage({
-              type: 'console',
-              logType: type,
-              content: content
-            }, '*');
-          };
-        }
+    function interceptConsole(type) {
+      return function(...args) {
+        originalConsole[type].apply(console, args);
+        const content = args.map(arg => 
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ).join(' ');
+        
+        window.parent.postMessage({
+          type: 'console',
+          logType: type,
+          content: content
+        }, '*');
+      };
+    }
 
-        console.log = interceptConsole('log');
-        console.error = interceptConsole('error');
-        console.warn = interceptConsole('warn');
-        console.info = interceptConsole('info');
-      </script>
-    `;
+    console.log = interceptConsole('log');
+    console.error = interceptConsole('error');
+    console.warn = interceptConsole('warn');
+    console.info = interceptConsole('info');
+  </script>
+`, []);
 
     // Update the runCode function
     const runCode = () => {
         // Clear previous console logs when running new code
         setConsoleLogs([]);
-        
+
         const source = `
             <!DOCTYPE html>
             <html lang="en">
@@ -597,7 +665,7 @@ export default function HomeScreen() {
                 </body>
             </html>
         `;
-        
+
         if (iframeRef.current) {
             const iframe = iframeRef.current;
             iframe.srcdoc = source;
@@ -650,12 +718,12 @@ export default function HomeScreen() {
         };
     }, [params.roomId]);
 
-    
 
-   // Update the live preview with a debounce and console intercept script
-useEffect(() => {
-    const timeout = setTimeout(() => {
-        const source = `
+
+    // Update the live preview with a debounce and console intercept script
+    useEffect(() => {
+        const timeout = setTimeout(() => {
+            const source = `
             <!DOCTYPE html>
             <html lang="en">
                 <head>
@@ -767,14 +835,152 @@ useEffect(() => {
                 </body>
             </html>
         `;
-        setSrcDoc(source);
-    }, 250);
+            setSrcDoc(source);
+        }, 250);
 
-    return () => clearTimeout(timeout);
-}, [htmlCode, cssCode, jsCode]);
+        return () => clearTimeout(timeout);
+    }, [htmlCode, cssCode, jsCode]);
 
-    // Simplify handleCodeChange to avoid formatting conflicts
-    const handleCodeChange = (type: 'html' | 'css' | 'js', value: string) => {
+    /*   // Simplify handleCodeChange to avoid formatting conflicts
+      const handleCodeChange = (type: 'html' | 'css' | 'js', value: string) => {
+          if (type === "html") {
+              setHtmlCode(value);
+          } else if (type === "css") {
+              setCssCode(value);
+          } else if (type === "js") {
+              setJsCode(value);
+          }
+  
+          // Emit changes via sockets
+          if (isConnected) {
+              socket.current.emit("code-update", {
+                  room: roomId,
+                  type,
+                  content: value,
+              });
+          }
+  
+          if (wsConnected && wsRef.current?.readyState === WebSocket.OPEN) {
+              const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
+              const language = type === 'html' ? 'html' : type === 'css' ? 'css' : 'javascript';
+  
+              const updateMessage: WebSocketMessage = {
+                  type: 'codeUpdate',
+                  data: {
+                      code: value,
+                      language,
+                      roomId,
+                      userId
+                  }
+              };
+  
+              wsRef.current.send(JSON.stringify(updateMessage));
+          }
+      };
+   */
+
+    // Optimized image upload handler
+    const handleImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setIsUploadingImage(true);
+            const result = await uploadImage({
+                file,
+                folder: "emergency-hotlines",
+                maxSizeMB: 10,
+            });
+
+            if (result.error || !result.url) {
+                throw new Error(result.error || 'Failed to upload image');
+            }
+
+            // Prepare message data with image
+            const messageData = {
+                roomId,
+                token: token || '',
+                name: userData?.name || '',
+                email: userData?.email || '',
+                message: result.url,
+                type: 'image',
+            };
+
+            // Send message with image URL
+            const response = await sendNewMessageInGroupChatApiRequest(messageData);
+
+            if (response.success) {
+                const newMessage = {
+                    ...response.data,
+                    isSelf: true,
+                    type: 'image',
+                };
+
+                setMessages(prev => [...prev, newMessage]);
+
+                // Emit to socket if connected
+                if (isConnected && socket.current) {
+                    socket.current.emit("chat-message", {
+                        room: roomId,
+                        message: { ...newMessage, isSelf: false },
+                    });
+                }
+            }
+
+            // Clear the input
+            event.target.value = '';
+
+        } catch (error) {
+            console.error('Error uploading image:', error);
+            toast.error('Failed to upload image');
+        } finally {
+            setIsUploadingImage(false);
+        }
+    }, [isConnected, roomId, token, userData?.email, userData?.name]);
+    // Update the saveAndRunCode function
+    const saveAndRunCode = () => {
+        setConsoleLogs([]);
+        runCode();
+    };
+
+    // Share the room URL for collaborative editing
+    const handleShareRoom = async () => {
+        const shareUrl = window.location.href;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (error) {
+            console.error('Failed to copy share URL:', error);
+        }
+    };
+
+
+    // Optimized chat data fetching
+    const getAllDataChats = useCallback(async (roomId: string) => {
+        try {
+            const response = await getAllChats(roomId);
+
+            if (!response?.data) {
+                throw new Error('Invalid chat data received');
+            }
+
+            const formattedChats: any[] = response.data.map((chat: any) => ({
+                ...chat,
+                isSelf: chat.email === userData?.email
+            }));
+
+            setMessages(formattedChats);
+            return true;
+        } catch (error) {
+            console.error('Error fetching chat messages:', error);
+            toast.error('Failed to load chat messages');
+            return false;
+        }
+    }, [userData?.email]);
+
+    // Optimized code change handler
+    const handleCodeChange = useCallback((type: 'html' | 'css' | 'js', value: string) => {
         if (type === "html") {
             setHtmlCode(value);
         } else if (type === "css") {
@@ -784,7 +990,7 @@ useEffect(() => {
         }
 
         // Emit changes via sockets
-        if (isConnected) {
+        if (isConnected && socket.current) {
             socket.current.emit("code-update", {
                 room: roomId,
                 type,
@@ -808,48 +1014,8 @@ useEffect(() => {
 
             wsRef.current.send(JSON.stringify(updateMessage));
         }
-    };
+    }, [isConnected, roomId, userData?.id, wsConnected]);
 
-    // Update the saveAndRunCode function
-    const saveAndRunCode = () => {
-        setConsoleLogs([]);
-        runCode();
-    };
-
-    // Share the room URL for collaborative editing
-    const handleShareRoom = async () => {
-        const shareUrl = window.location.href;
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch (error) {
-            console.error('Failed to copy share URL:', error);
-        }
-    };
-
-    // Update the getAllDataChats function
-    const getAllDataChats = async (roomId: string) => {
-        try {
-            const response = await getAllChats(roomId);
-            console.log("res222", response)
-            /* if (!response?.success || !Array.isArray(response.data?.chats)) {
-                throw new Error('Invalid chat data received');
-            } */
-
-            const formattedChats: any[] = response.data.map((chat: any) => ({
-                ...chat,
-                isSelf: chat.email === userData?.email
-            }));
-
-            setMessages(formattedChats);
-            return true;
-        } catch (error) {
-            console.error('Error fetching chat messages:', error);
-            toast.error('Failed to load chat messages');
-            return false;
-        }
-    };
 
     // Update the sendMessage function
     const sendMessage = async () => {
@@ -911,8 +1077,6 @@ useEffect(() => {
             const roomDetails = roomStore.currentRoomDetails;
             const searchParams = new URLSearchParams(window.location.search);
             const isCollaborator = searchParams.get('collaborator') === 'true';
-            const participantName = searchParams.get('participantName');
-            const participantEmail = searchParams.get('participantEmail');
 
 
             const updateData: any = {
@@ -962,62 +1126,6 @@ useEffect(() => {
         }
     };
 
-    // Render Chat Sidebar
-    /*     const renderChatSidebar = () => {
-            return (
-                <div className="flex flex-col h-full border-2  relative z-50">
-                    <Tabs defaultValue="chat" className="flex flex-col h-full">
-                        <div className="p-4 border-b-2 relative z-40">
-                            <TabsList className="w-full border">
-                                <TabsTrigger value="chat" className="flex-1 border-r">
-                                    <MessageSquare className="w-4 h-4 mr-2" />
-                                    Chat
-                                </TabsTrigger>
-                                <TabsTrigger value="users" className="flex-1">
-                                    <Users className="w-4 h-4 mr-2" />
-                                    Users
-                                </TabsTrigger>
-                            </TabsList>
-                        </div>
-    
-                        <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
-                            <ChatMessages messages={messages} userData={userData} />
-    
-                            <div className="p-4 border-t-2 bg-white relative z-40">
-                                <form
-                                    onSubmit={(e) => {
-                                        e.preventDefault();
-                                        sendMessage();
-                                    }}
-                                    className="flex space-x-2"
-                                >
-                                    <Input
-                                        value={messageInput}
-                                        onChange={(e) => setMessageInput(e.target.value)}
-                                        placeholder="Type a message..."
-                                        className="flex-grow"
-                                        disabled={isMessageSending}
-                                    />
-                                    <Button
-                                        type="submit"
-                                        size="sm"
-                                        disabled={isMessageSending || !messageInput.trim()}
-                                        className="border"
-                                    >
-                                        {isMessageSending ? "Sending..." : "Send"}
-                                    </Button>
-                                </form>
-                            </div>
-                        </TabsContent>
-    
-    
-    
-                    </Tabs>
-                </div>
-            );
-        };
-     */
-    // Render Chat Sidebar
     const renderChatSidebar = () => {
         return (
             <div className="flex flex-col h-full border-2 bg-white relative z-50">
@@ -1046,14 +1154,56 @@ useEffect(() => {
                         </TabsList>
                     </div>
 
+
                     <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
-                        <ChatMessages messages={messages} userData={userData} />
+                        <ChatMessages
+                            messages={messages}
+                            userData={userData}
+                            roomId={roomId}
+                            onNewMessage={handleNewMessage}
+                        />
 
                         <div className="p-4 border-t-2 bg-white relative z-40">
                             <form
-                                onSubmit={(e) => {
+                                onSubmit={async (e) => {
                                     e.preventDefault();
-                                    sendMessage();
+                                    if (!messageInput.trim() || isMessageSending) return;
+
+                                    try {
+                                        setIsMessageSending(true);
+
+                                        const messageData = {
+                                            content: messageInput.trim(),
+                                            userId: userData?.accessCode || socket.current?.id || '',
+                                            userName: userData?.name || '',
+                                            email: userData?.email || '',
+                                            roomId: roomId,
+                                            timestamp: Date.now(),
+                                            type: 'text'
+                                        };
+                                        console.log("messageData", messageData)
+                                        // Send to backend API to store in database
+                                        const response = await sendNewMessageInGroupChatApiRequest(messageData as any);
+
+                                        if (response.success) {
+                                            // Emit to socket for real-time updates
+                                            socket.current?.emit('chat-message', {
+                                                roomId,
+                                                message: messageData
+                                            });
+
+                                            // Update local state
+                                            setMessages(prev => [...prev, { ...messageData, isSelf: true }]);
+                                            setMessageInput('');
+                                        } else {
+                                            throw new Error('Failed to send message');
+                                        }
+                                    } catch (error) {
+                                        console.error('Error sending message:', error);
+                                        toast.error('Failed to send message. Please try again.');
+                                    } finally {
+                                        setIsMessageSending(false);
+                                    }
                                 }}
                                 className="flex space-x-2"
                             >
@@ -1071,6 +1221,27 @@ useEffect(() => {
                                     className="border"
                                 >
                                     {isMessageSending ? "Sending..." : "Send"}
+                                </Button>
+                                <Input
+                                    type="file"
+                                    id="image-upload"
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                    disabled={isUploadingImage}
+                                />
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-9 w-9"
+                                    disabled={isUploadingImage}
+                                    onClick={() => document.getElementById('image-upload')?.click()}
+                                >
+                                    {isUploadingImage ? (
+                                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                                    ) : (
+                                        <Image className="h-4 w-4" />
+                                    )}
                                 </Button>
                             </form>
                         </div>
@@ -1144,6 +1315,12 @@ useEffect(() => {
         );
     };
 
+    // Return loading screen or main UI based on loading state
+    if (isLoading) {
+        return <LoadingScreen />;
+    }
+
+
     return (
         <TooltipProvider>
             {isParticipant && <ParticipantForm token={token} roomId={roomId} />}
@@ -1174,7 +1351,7 @@ useEffect(() => {
 
                     {/* Add the HistoryTracker */}
                     {showHistory && (
-                        <div className="fixed right-[320px] top-16 bottom-0 w-[400px] border-l bg-background p-4 overflow-auto z-[60]">
+                        <div className="fixed right-[320px] top-16 bottom-0 w-[400px] p-4 overflow-auto z-[60]">
                             <HistoryTracker
                                 fetchHistory={fetchHistory}
                                 historyData={codeHistory}
@@ -1304,8 +1481,8 @@ useEffect(() => {
 
                                 {/* Console Output */}
                                 {showConsole && (
-                                    <div className="h-2/5 border-t dark:border-gray-800 relative z-[1]">
-                                        <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800 relative z-[2]">
+                                    <div className="h-[300px] border-t dark:border-gray-800 flex flex-col">
+                                        <div className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800 border-b">
                                             <div className="text-sm font-medium flex items-center">
                                                 <Terminal size={14} className="mr-2" /> Console
                                             </div>
@@ -1322,17 +1499,21 @@ useEffect(() => {
                                                 </Tooltip>
                                             </div>
                                         </div>
-                                        <ScrollArea className="h-full bg-black text-white p-2 font-mono text-sm relative z-[1]">
-                                            {consoleLogs.length === 0 ? (
-                                                <div className="text-gray-500 italic p-2">No console output yet. Run your code to see logs here.</div>
-                                            ) : (
-                                                consoleLogs.map((log) => (
-                                                    <div key={log.id} className={`py-1 ${getConsoleLogClass(log.type)}`}>
-                                                        {log.content}
-                                                    </div>
-                                                ))
-                                            )}
-                                        </ScrollArea>
+                                        <div className="flex-1 overflow-hidden bg-black">
+                                            <ScrollArea className="h-full">
+                                                <div className="p-2 font-mono text-sm text-white">
+                                                    {consoleLogs.length === 0 ? (
+                                                        <div className="text-gray-500 italic p-2">No console output yet. Run your code to see logs here.</div>
+                                                    ) : (
+                                                        consoleLogs.map((log) => (
+                                                            <div key={log.id} className={`py-1 ${getConsoleLogClass(log.type)}`}>
+                                                                {log.content}
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </ScrollArea>
+                                        </div>
                                     </div>
                                 )}
                             </div>

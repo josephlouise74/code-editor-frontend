@@ -54,7 +54,7 @@ export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogC
                         </TooltipProvider>
                     </div>
                 </div>
-                <div 
+                <div
                     ref={scrollRef}
                     className="bg-black text-white p-2 font-mono text-sm min-h-[500px] max-h-[500px] overflow-y-auto"
                 >
@@ -64,8 +64,8 @@ export default function ConsolePanel({ consoleLogs, clearConsole, getConsoleLogC
                         </div>
                     ) : (
                         consoleLogs.map((log: ConsoleLog) => (
-                            <div 
-                                key={log.id} 
+                            <div
+                                key={log.id}
                                 className={`py-1 ${getConsoleLogClass(log.type)} break-words`}
                             >
                                 <span className="text-gray-500 text-xs mr-2">

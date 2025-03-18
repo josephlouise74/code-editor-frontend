@@ -9,12 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Lock, Hash, Loader2 } from "lucide-react";
+import { Lock, Hash, Loader2, ArrowRight } from "lucide-react";
 import { observer } from "mobx-react-lite";
 import { roomStore } from "@/lib/store/roomStore";
 import { useRouter } from "next/navigation";
-import Link from "next/link"; // Add this import at the top
+import Link from "next/link";
+import { theme } from "@/lib/theme";
+import unicode from '../../../public/unicode.png'
+import Image from "next/image";
 
+// Schema definitions
 const joinRoomSchema = z.object({
     accessCode: z.string().min(3, "Access code must be at least 3 characters"),
     password: z.string().min(6, "Password must be at least 6 characters"),
@@ -29,14 +33,12 @@ const participantSchema = z.object({
 
 type ParticipantFormValues = z.infer<typeof participantSchema>;
 
-
-
-
 const JoinRoomForm = observer(() => {
-
-
-
     const router = useRouter();
+    const [showParticipantDialog, setShowParticipantDialog] = useState(false);
+    const [roomData, setRoomData] = useState<{ roomId: string; token: string } | null>(null);
+
+    // Form setup
     const form = useForm<JoinRoomFormValues>({
         resolver: zodResolver(joinRoomSchema),
         defaultValues: {
@@ -44,10 +46,6 @@ const JoinRoomForm = observer(() => {
             password: "",
         },
     });
-
-    // Add these states after the router declaration
-    const [showParticipantDialog, setShowParticipantDialog] = useState(false);
-    const [roomData, setRoomData] = useState<{ roomId: string; token: string } | null>(null);
 
     const participantForm = useForm<ParticipantFormValues>({
         resolver: zodResolver(participantSchema),
@@ -57,32 +55,31 @@ const JoinRoomForm = observer(() => {
         },
     });
 
-
-    // Add this new function for participant form submission
     const onParticipantSubmit = async (data: ParticipantFormValues) => {
         try {
             participantForm.reset();
             setShowParticipantDialog(false);
 
             if (roomData) {
-                router.push(`/room/${roomData.roomId}?token=${encodeURIComponent(roomData.token)}&name=${encodeURIComponent(data.name)}&email=${encodeURIComponent(data.email)}`);
+                router.push(
+                    `/room/${roomData.roomId}?token=${encodeURIComponent(roomData.token)}&name=${encodeURIComponent(data.name)}&email=${encodeURIComponent(data.email)}`
+                );
             }
         } catch (error) {
             console.error("Failed to save participant:", error);
         }
     };
 
-
-
     const onSubmit = async (data: JoinRoomFormValues) => {
         try {
             const response = await roomStore.joinRoom(data);
-            console.log("tanginga", response)
+
             if (response && response.roomId) {
                 form.reset();
-                // Store host value in localStorage
                 localStorage.setItem('host', 'Host');
-                router.push(`/room/${response.roomId}?token=${encodeURIComponent(response.token)}&host=${encodeURIComponent('Host')}&adminEmail=${encodeURIComponent(response.email)}&collaborator=false`);
+                router.push(
+                    `/room/${response.roomId}?token=${encodeURIComponent(response.token)}&host=${encodeURIComponent('Host')}&adminEmail=${encodeURIComponent(response.email)}&collaborator=false`
+                );
             }
         } catch (error) {
             console.error("Failed to join room:", error);
@@ -90,90 +87,115 @@ const JoinRoomForm = observer(() => {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-white dark:bg-gray-900 p-4">
-            <Card className="w-full max-w-md border-2 border-black dark:border-gray-800">
-                <CardHeader className="space-y-1 pb-6 border-b border-black dark:border-gray-800">
-                    <CardTitle className="text-2xl font-bold text-center text-black dark:text-white">
-                        Join Room
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                    <Form {...form}>
-                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                            <FormField
-                                control={form.control}
-                                name="accessCode"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <Label className="text-black dark:text-white">Room Code</Label>
-                                        <FormControl>
-                                            <div className="relative">
-                                                <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-black dark:text-gray-400" size={20} />
-                                                <Input
-                                                    {...field}
-                                                    placeholder="Enter room code"
-                                                    className="pl-10 border-2 border-black dark:border-gray-800 focus:ring-black dark:focus:ring-gray-700"
-                                                />
-                                            </div>
-                                        </FormControl>
-                                        <FormMessage className="text-red-600" />
-                                    </FormItem>
-                                )}
-                            />
+        <div className="flex min-h-screen items-center justify-center bg-white p-4">
+            <div className="w-full max-w-md">
 
-                            <FormField
-                                control={form.control}
-                                name="password"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <Label className="text-black dark:text-white">Password</Label>
-                                        <FormControl>
-                                            <div className="relative">
-                                                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-black dark:text-gray-400" size={20} />
-                                                <Input
-                                                    {...field}
-                                                    type="password"
-                                                    placeholder="Enter room password"
-                                                    className="pl-10 border-2 border-black dark:border-gray-800 focus:ring-black dark:focus:ring-gray-700"
-                                                />
-                                            </div>
-                                        </FormControl>
-                                        <FormMessage className="text-red-600" />
-                                    </FormItem>
-                                )}
-                            />
+                <Card className={`border-2 ${theme.borderPrimary} shadow-lg ${theme.shadowPrimary} bg-black`}>
+                    <CardHeader className={`pb-6 border-b ${theme.borderPrimary}`}>
+                        <div className="flex justify-center">
+                            <div className="relative h-28 w-28">
+                                <Image
+                                    src={unicode}
+                                    alt="Unicode Logo"
+                                    className="object-contain"
+                                    fill
+                                    priority
+                                />
+                            </div>
+                        </div>
+                        <CardTitle className="text-3xl font-extrabold text-center">
+                            <span className="text-white">
+                                Join Room
+                            </span>
+                        </CardTitle>
+                    </CardHeader>
 
-                            <Button
-                                type="submit"
-                                className="w-full h-11 text-base font-medium bg-black hover:bg-gray-800 text-white dark:bg-white dark:text-black dark:hover:bg-gray-200 transition-colors"
-                                disabled={roomStore.isLoading}
-                            >
-                                {roomStore.isLoading ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                        Joining...
-                                    </>
-                                ) : (
-                                    'Join Room'
-                                )}
-                            </Button>
-                        </form>
-                    </Form>
+                    <CardContent className="pt-8">
+                        <Form {...form}>
+                            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                                <FormField
+                                    control={form.control}
+                                    name="accessCode"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label className="text-white font-medium">Room Code</Label>
+                                            <FormControl>
+                                                <div className="relative">
+                                                    <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
+                                                    <Input
+                                                        {...field}
+                                                        placeholder="Enter room code"
+                                                        className="pl-10 border-2 border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white text-gray-800 placeholder:text-gray-400 rounded-md"
+                                                    />
+                                                </div>
+                                            </FormControl>
+                                            <FormMessage className="text-red-400" />
+                                        </FormItem>
+                                    )}
+                                />
 
-                    {/* Add this new section */}
-                    <div className="mt-6 text-center">
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Don't have a room?{' '}
-                            <Link
-                                href="/create"
-                                className="text-black hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 font-medium"
-                            >
-                                Create a new room
-                            </Link>
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
+                                <FormField
+                                    control={form.control}
+                                    name="password"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label className="text-white font-medium">Password</Label>
+                                            <FormControl>
+                                                <div className="relative">
+                                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
+                                                    <Input
+                                                        {...field}
+                                                        type="password"
+                                                        placeholder="Enter room password"
+                                                        className="pl-10 border-2 border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white text-gray-800 placeholder:text-gray-400 rounded-md"
+                                                    />
+                                                </div>
+                                            </FormControl>
+                                            <FormMessage className="text-red-400" />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <Button
+                                    type="submit"
+                                    className="w-full h-12 text-base font-bold bg-red-600 hover:bg-red-700 text-white hover:text-gray-100 transition-all duration-300 rounded-md shadow-md flex items-center justify-center gap-2 group"
+                                    disabled={roomStore.isLoading}
+                                >
+                                    {roomStore.isLoading ? (
+                                        <>
+                                            <Loader2 className="h-5 w-5 animate-spin" />
+                                            <span>Joining...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="transition-transform group-hover:scale-105">Join Room</span>
+                                            <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                                        </>
+                                    )}
+                                </Button>
+                            </form>
+                        </Form>
+
+                        <div className="mt-8 text-center">
+                            <p className="text-gray-300">
+                                Don't have a room?{' '}
+                                <Link
+                                    href="/create"
+                                    className={`${theme.linkText} ${theme.linkHover} font-medium relative ${theme.linkUnderline}`}
+                                >
+                                    Create a new room
+                                </Link>
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <div className="mt-4 text-center">
+                    <p className="text-xs text-gray-500">
+                        Made with ❤️ for the best collaboration experience
+                    </p>
+                </div>
+            </div>
         </div>
     );
 });
