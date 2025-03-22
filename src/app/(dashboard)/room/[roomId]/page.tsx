@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAllChats, getAllHistoryCode, getRoomData, sendNewMessageInGroupChatApiRequest, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
 import { roomStore } from "@/lib/store/roomStore";
-import { uploadImage } from "@/lib/supabase/supabase";
+import { uploadImage, uploadVoiceMessage } from "@/lib/supabase/supabase";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
 import { javascript as jsLang } from "@codemirror/lang-javascript";
@@ -23,6 +23,8 @@ import {
     Image,
     Loader2,
     MessageSquare,
+    Mic,
+    Square,
     Terminal,
     Trash,
     Users,
@@ -129,7 +131,17 @@ export default function HomeScreen() {
     const [isSaving, setIsSaving] = useState(false);
 
     const [userData, setUserData] = useState<any>(null)
-    const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+    const [isRecording, setIsRecording] = useState(false);
+
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+
+    const audioChunks = useRef<Blob[]>([]);
+    const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const [isVoiceLoading, setIsVoiceLoading] = useState(false);
+
 
     // Update your state declarations
     const [codeHistory, setCodeHistory] = useState<any>({
@@ -287,6 +299,91 @@ export default function HomeScreen() {
     }, [showChatSidebar]);
 
 
+    // Add WebSocket connection effect
+    useEffect(() => {
+        const currentRoomId = params.roomId as string;
+        if (!currentRoomId || !token) return;
+
+        // Create WebSocket connection
+        const ws = new WebSocket('ws://localhost:7400');
+        wsRef.current = ws;
+
+        // Connection opened
+        ws.addEventListener('open', () => {
+            console.log('WebSocket connection established');
+            setWsConnected(true);
+
+            // Send initialization message
+            const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
+            const initMessage: WebSocketMessage = {
+                type: 'init',
+                data: {
+                    roomId: currentRoomId,
+                    userId
+                }
+            };
+            ws.send(JSON.stringify(initMessage));
+
+            toast.success('Connected to code sync server');
+        });
+
+        // Listen for messages
+        ws.addEventListener('message', (event) => {
+            try {
+                const message: WebSocketMessage = JSON.parse(event.data);
+
+                switch (message.type) {
+                    case 'init':
+                        // Handle initial code state if needed
+                        if (message.data.html) setHtmlCode(message.data.html);
+                        if (message.data.css) setCssCode(message.data.css);
+                        if (message.data.javascript) setJsCode(message.data.javascript);
+                        break;
+
+                    case 'codeUpdate':
+                        // Update code based on language
+                        if (message.data.language === 'html' && message.data.code) {
+                            setHtmlCode(message.data.code);
+                        } else if (message.data.language === 'css' && message.data.code) {
+                            setCssCode(message.data.code);
+                        } else if (message.data.language === 'javascript' && message.data.code) {
+                            setJsCode(message.data.code);
+                        }
+                        break;
+
+                    case 'cursorUpdate':
+                        // Handle cursor updates if needed
+                        // This would require additional UI elements to show other users' cursors
+                        break;
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
+            }
+        });
+
+        // Connection closed
+        ws.addEventListener('close', () => {
+            console.log('WebSocket connection closed');
+            setWsConnected(false);
+            toast.warning('Disconnected from code sync server');
+        });
+
+        // Connection error
+        ws.addEventListener('error', (error) => {
+            console.error('WebSocket error:', error);
+            toast.error('Error connecting to code sync server');
+        });
+
+        // Clean up on unmount
+        return () => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
+        };
+    }, [params.roomId, token, userData?.id]);
+
+
+
     useEffect(() => {
         const currentRoomId = params.roomId as string;
         if (!currentRoomId || !token) return;
@@ -308,12 +405,28 @@ export default function HomeScreen() {
                 console.log('✅ Socket connected:', socket.current?.id);
                 setIsConnected(true);
 
+                // Get role from localStorage
+                const userRole = localStorage.getItem('role');
+                let userName, userEmail;
+
+                if (userRole === 'host') {
+                    // Get admin data
+                    userName = localStorage.getItem('adminName') || 'Admin';
+                    userEmail = localStorage.getItem('adminEmail') || '';
+                    console.log('🔑 Connected as host:', { userName, userEmail });
+                } else {
+                    // Get participant data
+                    userName = localStorage.getItem('participantName') || 'Anonymous';
+                    userEmail = localStorage.getItem('participantEmail') || '';
+                    console.log('👤 Connected as participant:', { userName, userEmail });
+                }
+
                 // Join chat room with correct event name and data structure
                 socket.current?.emit("join-chat", {
                     roomId: currentRoomId,
-                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
-                    email: searchParams.get('participantEmail') || userData?.email || '',
-                    role: searchParams.get('participantRole')
+                    name: userName,
+                    email: userEmail,
+                    role: userRole || 'participant'
                 });
             });
 
@@ -409,6 +522,174 @@ export default function HomeScreen() {
             toast.warning("Disconnected from chat server. Attempting to reconnect...");
         });
     };
+
+
+
+
+    const handleVoiceRecording = async () => {
+        try {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        } catch (error) {
+            console.error('Error handling voice recording:', error);
+            toast.error('Failed to access microphone. Please check permissions.');
+            setIsRecording(false);
+        }
+    };
+
+    const stopRecording = () => {
+        console.log('Stopping voice recording');
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+        }
+
+        clearRecordingTimer();
+        setIsRecording(false);
+    };
+
+    const clearRecordingTimer = () => {
+        if (durationTimerRef.current) {
+            clearInterval(durationTimerRef.current);
+            durationTimerRef.current = null;
+        }
+    };
+
+    const startRecording = async () => {
+        console.log('Starting voice recording');
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                sampleRate: 44100
+            }
+        });
+
+        const recorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm;codecs=opus',
+            bitsPerSecond: 128000
+        });
+
+        audioChunks.current = [];
+
+        setupRecorderEventHandlers(recorder, stream);
+
+        setMediaRecorder(recorder);
+        recorder.start(1000);
+        setIsRecording(true);
+
+        startRecordingTimer(recorder);
+    };
+
+    const setupRecorderEventHandlers = (recorder: MediaRecorder, stream: MediaStream) => {
+        recorder.ondataavailable = handleDataAvailable;
+        recorder.onstop = () => handleRecordingStop(stream);
+    };
+
+    const handleDataAvailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+            audioChunks.current.push(event.data);
+            console.log('Recording chunk received:', event.data.size, 'bytes');
+        }
+    };
+
+    const handleRecordingStop = async (stream: MediaStream) => {
+        try {
+            setIsVoiceLoading(true);
+
+            const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
+            console.log('Voice recording completed', {
+                size: audioBlob.size,
+                chunks: audioChunks.current.length,
+                duration: recordingDuration
+            });
+
+            const result = await uploadVoiceMessage({
+                file: audioBlob,
+                folder: `rooms/${roomId}/voice-messages`
+            });
+
+            if (result.error || !result.url) {
+                throw new Error(result.error || 'Failed to upload voice message');
+            }
+
+            await sendVoiceMessage(result);
+
+        } catch (error) {
+            console.error('Error processing voice message:', error);
+            toast.error('Failed to send voice message. Please try again.');
+        } finally {
+            cleanup(stream);
+            setIsVoiceLoading(false);
+        }
+    };
+
+    const sendVoiceMessage = async (uploadResult: any) => {
+        const userRole = localStorage.getItem('role');
+        const messageData: any = {
+            content: uploadResult.url!,
+            userId: userData?.accessCode || socket.current?.id || '',
+            userName: userData?.name || '',
+            email: userRole === 'host'
+                ? localStorage.getItem('adminEmail')
+                : localStorage.getItem('participantEmail'),
+            roomId: roomId,
+            timestamp: Date.now(),
+            type: 'voice',
+            duration: recordingDuration,
+            filePath: uploadResult.filePath,
+            uid: nanoid(),
+            role: userRole || 'participant',
+        };
+
+        console.log('Sending voice message data:', messageData);
+
+        const response = await sendNewMessageInGroupChatApiRequest(messageData);
+
+        if (response.success) {
+            socket.current?.emit('chat-message', { roomId, message: messageData });
+            setMessages(prev => [...prev, { ...messageData, isSelf: true }]);
+            console.log('Voice message added to chat');
+        } else {
+            throw new Error('Failed to send voice message');
+        }
+    };
+
+    const cleanup = (stream: MediaStream) => {
+        stream.getTracks().forEach(track => track.stop());
+        setIsLoading(false);
+        setRecordingDuration(0);
+        audioChunks.current = [];
+    };
+
+    const startRecordingTimer = (recorder: MediaRecorder) => {
+        const startTime = Date.now();
+        durationTimerRef.current = setInterval(() => {
+            const newDuration = Math.floor((Date.now() - startTime) / 1000);
+            setRecordingDuration(newDuration);
+
+            if (newDuration >= 60) {
+                console.log('Maximum recording duration reached, stopping');
+                stopRecording();
+            }
+        }, 1000);
+    };
+
+    // Cleanup effect
+    useEffect(() => {
+        return () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+            clearRecordingTimer();
+        };
+    }, [mediaRecorder]);
+
+
+
 
     // Update the sendMessage function
     const sendMessage = () => {
@@ -563,12 +844,28 @@ export default function HomeScreen() {
                 console.log('✅ Socket connected:', socket.current?.id);
                 setIsConnected(true);
 
+                // Get role from localStorage
+                const userRole = localStorage.getItem('role');
+                let userName, userEmail;
+
+                if (userRole === 'host') {
+                    // Get admin data
+                    userName = localStorage.getItem('adminName') || 'Admin';
+                    userEmail = localStorage.getItem('adminEmail') || '';
+                    console.log('🔑 Connected as host:', { userName, userEmail });
+                } else {
+                    // Get participant data
+                    userName = localStorage.getItem('participantName') || 'Anonymous';
+                    userEmail = localStorage.getItem('participantEmail') || '';
+                    console.log('👤 Connected as participant:', { userName, userEmail });
+                }
+
                 // Join chat room with correct event name and data structure
                 socket.current?.emit("join-chat", {
                     roomId,
-                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
-                    email: searchParams.get('participantEmail') || userData?.email || '',
-                    role: searchParams.get('participantRole')
+                    name: userName,
+                    email: userEmail,
+                    role: userRole || 'participant'
                 });
             });
 
@@ -864,102 +1161,8 @@ export default function HomeScreen() {
         return () => clearTimeout(timeout);
     }, [htmlCode, cssCode, jsCode]);
 
-    /*   // Simplify handleCodeChange to avoid formatting conflicts
-      const handleCodeChange = (type: 'html' | 'css' | 'js', value: string) => {
-          if (type === "html") {
-              setHtmlCode(value);
-          } else if (type === "css") {
-              setCssCode(value);
-          } else if (type === "js") {
-              setJsCode(value);
-          }
-  
-          // Emit changes via sockets
-          if (isConnected) {
-              socket.current.emit("code-update", {
-                  room: roomId,
-                  type,
-                  content: value,
-              });
-          }
-  
-          if (wsConnected && wsRef.current?.readyState === WebSocket.OPEN) {
-              const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
-              const language = type === 'html' ? 'html' : type === 'css' ? 'css' : 'javascript';
-  
-              const updateMessage: WebSocketMessage = {
-                  type: 'codeUpdate',
-                  data: {
-                      code: value,
-                      language,
-                      roomId,
-                      userId
-                  }
-              };
-  
-              wsRef.current.send(JSON.stringify(updateMessage));
-          }
-      };
-   */
 
-    // Optimized image upload handler
-    const handleImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
 
-        try {
-            setIsUploadingImage(true);
-            const result = await uploadImage({
-                file,
-                folder: "emergency-hotlines",
-                maxSizeMB: 10,
-            });
-
-            if (result.error || !result.url) {
-                throw new Error(result.error || 'Failed to upload image');
-            }
-
-            // Prepare message data with image
-            const messageData = {
-                roomId,
-                token: token || '',
-                name: userData?.name || '',
-                email: userData?.email || '',
-                message: result.url,
-                type: 'image',
-            };
-
-            // Send message with image URL
-            const response = await sendNewMessageInGroupChatApiRequest(messageData);
-
-            if (response.success) {
-                const newMessage = {
-                    ...response.data,
-                    isSelf: true,
-                    type: 'image',
-                };
-
-                setMessages(prev => [...prev, newMessage]);
-
-                // Emit to socket if connected
-                if (isConnected && socket.current) {
-                    socket.current.emit("chat-message", {
-                        room: roomId,
-                        message: { ...newMessage, isSelf: false },
-                    });
-                }
-            }
-
-            // Clear the input
-            event.target.value = '';
-
-        } catch (error) {
-            console.error('Error uploading image:', error);
-            toast.error('Failed to upload image');
-        } finally {
-            setIsUploadingImage(false);
-        }
-    }, [isConnected, roomId, token, userData?.email, userData?.name]);
     // Update the saveAndRunCode function
     const saveAndRunCode = () => {
         setConsoleLogs([]);
@@ -1114,6 +1317,25 @@ export default function HomeScreen() {
                 >
                     {isMessageSending ? "Sending..." : "Send"}
                 </Button>
+
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-9 w-9 ${isRecording ? 'bg-red-500 hover:bg-red-600' : ''}`}
+                    onClick={handleVoiceRecording}
+                    disabled={isVoiceLoading}
+                >
+                    {isVoiceLoading ? (
+                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                    ) : isRecording ? (
+                        <div className="flex items-center">
+                            <Square className="h-4 w-4 text-white" />
+                            <span className="ml-2 text-xs text-white">{recordingDuration}s</span>
+                        </div>
+                    ) : (
+                        <Mic className="h-4 w-4" />
+                    )}
+                </Button>
             </form>
             {typingUsers.length > 0 && (
                 <div className="text-sm text-muted-foreground mt-1">
@@ -1124,14 +1346,20 @@ export default function HomeScreen() {
     );
 
     // Update the TabsContent to use the new form
-    <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
-        <ChatMessages
-            messages={messages}
-            userData={userData}
-            roomId={roomId}
-            onNewMessage={handleNewMessage}
-        />
-        {renderChatForm()}
+    <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-screen">
+        <ScrollArea className="flex-1 h-[calc(100vh-180px)]">
+            <div className="flex flex-col h-full">
+                <ChatMessages
+                    messages={messages}
+                    userData={userData}
+                    roomId={roomId}
+                    onNewMessage={handleNewMessage}
+                />
+            </div>
+        </ScrollArea>
+        <div className="sticky bottom-0 w-full bg-white">
+            {renderChatForm()}
+        </div>
     </TabsContent>
 
     /*     // Update the sendMessage function
@@ -1262,14 +1490,20 @@ export default function HomeScreen() {
                     </div>
 
 
-                    <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
-                        <ChatMessages
-                            messages={messages}
-                            userData={userData}
-                            roomId={roomId}
-                            onNewMessage={handleNewMessage}
-                        />
-                        {renderChatForm()}
+                    <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-screen">
+                        <ScrollArea className="flex-1 h-[calc(100vh-180px)] ">
+                            <div className="flex flex-col h-full">
+                                <ChatMessages
+                                    messages={messages}
+                                    userData={userData}
+                                    roomId={roomId}
+                                    onNewMessage={handleNewMessage}
+                                />
+                            </div>
+                        </ScrollArea>
+                        <div className="sticky bottom-0 w-full bg-white">
+                            {renderChatForm()}
+                        </div>
                     </TabsContent>
 
                     <TabsContent value="users" className="p-0 m-0 h-full">

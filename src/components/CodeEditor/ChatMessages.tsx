@@ -19,6 +19,7 @@ interface Message {
     type?: 'text' | 'voice';
     duration?: number;
     filePath?: string;
+    role?: 'host' | 'participant';
 }
 
 interface ChatMessagesProps {
@@ -36,9 +37,10 @@ interface AudioPlayerProps {
     src: string;
     duration?: number;
     isCompact?: boolean;
+    isOwn?: boolean;
 }
 
-const AudioPlayer = ({ src, duration = 0, isCompact = false }: AudioPlayerProps) => {
+const AudioPlayer = ({ src, duration = 0, isCompact = false, isOwn = false }: AudioPlayerProps) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [audioDuration, setAudioDuration] = useState(duration);
@@ -118,6 +120,17 @@ const AudioPlayer = ({ src, duration = 0, isCompact = false }: AudioPlayerProps)
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    const buttonClass = cn(
+        "rounded-full p-0",
+        isOwn ? "hover:bg-white/20" : "hover:bg-primary/10",
+        isCompact ? "w-8 h-8" : "w-10 h-10"
+    );
+
+    const iconClass = cn(
+        isCompact ? "h-4 w-4" : "h-5 w-5",
+        isOwn ? "text-white" : "text-primary"
+    );
+
     if (isCompact) {
         return (
             <div className="flex items-center space-x-2 min-w-[120px]">
@@ -126,14 +139,14 @@ const AudioPlayer = ({ src, duration = 0, isCompact = false }: AudioPlayerProps)
                     variant="ghost"
                     onClick={togglePlayPause}
                     disabled={isLoading}
-                    className="w-8 h-8 p-0 rounded-full hover:bg-primary/10"
+                    className={buttonClass}
                 >
                     {isLoading ? (
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                     ) : isPlaying ? (
-                        <Pause className="h-4 w-4" />
+                        <Pause className={iconClass} />
                     ) : (
-                        <Play className="h-4 w-4" />
+                        <Play className={iconClass} />
                     )}
                 </Button>
                 <div className="flex flex-col text-xs">
@@ -154,14 +167,14 @@ const AudioPlayer = ({ src, duration = 0, isCompact = false }: AudioPlayerProps)
                     variant="ghost"
                     onClick={togglePlayPause}
                     disabled={isLoading}
-                    className="w-10 h-10 p-0 rounded-full hover:bg-primary/10"
+                    className={buttonClass}
                 >
                     {isLoading ? (
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                     ) : isPlaying ? (
-                        <Pause className="h-5 w-5" />
+                        <Pause className={iconClass} />
                     ) : (
-                        <Play className="h-5 w-5" />
+                        <Play className={iconClass} />
                     )}
                 </Button>
                 <Volume2 className="h-4 w-4 opacity-70" />
@@ -237,30 +250,88 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage }: ChatM
             .slice(0, 2);
     };
 
-    const renderMessage = (message: Message, isSelf: boolean) => {
+    const isOwnMessage = (messageEmail?: string) => {
+        const userRole = localStorage.getItem('role');
+        const userEmail = userRole === 'host'
+            ? localStorage.getItem('adminEmail')
+            : localStorage.getItem('participantEmail');
+
+        return messageEmail === userEmail;
+    };
+
+    const renderMessage = (message: Message) => {
+        const isOwn = isOwnMessage(message.email);
+
         const messageClass = cn(
             "px-4 py-2 rounded-2xl max-w-full",
-            isSelf ? "bg-blue-600 text-white" : "bg-muted/60"
+            isOwn
+                ? "bg-blue-600 text-white ml-auto"
+                : message.role === 'host'
+                    ? "bg-purple-600 text-white"
+                    : "bg-muted/60",
+            "transition-all duration-200 hover:shadow-md"
+        );
+
+        const containerClass = cn(
+            "flex gap-2",
+            isOwn ? "justify-end" : "justify-start",
+            "items-end mb-4"
         );
 
         return (
-            <div className={messageClass}>
-                {message.type === 'voice' ? (
-                    <AudioPlayer
-                        src={message.content}
-                        duration={message.duration}
-                        isCompact={true}
-                    />
-                ) : (
-                    <div className="break-words whitespace-pre-wrap text-sm">
-                        {message.content}
-                    </div>
+            <div className={containerClass}>
+                {!isOwn && (
+                    <Avatar className="h-6 w-6 flex-shrink-0">
+                        <AvatarFallback
+                            className={cn(
+                                "text-xs",
+                                message.role === 'host'
+                                    ? "bg-purple-100 text-purple-600"
+                                    : "bg-primary/10 text-primary"
+                            )}
+                        >
+                            {getInitials(message.userName)}
+                        </AvatarFallback>
+                    </Avatar>
                 )}
-                <div className={cn(
-                    "text-[10px] mt-1",
-                    isSelf ? "text-blue-100" : "text-muted-foreground"
-                )}>
-                    {format(getPhilippineTime(message.timestamp), "h:mm a")}
+
+                <div className={`max-w-[75%] flex flex-col ${isOwn ? "items-end" : "items-start"}`}>
+                    {!isOwn && (
+                        <span className={cn(
+                            "text-xs font-medium mb-1",
+                            message.role === 'host'
+                                ? "text-purple-600"
+                                : "text-muted-foreground"
+                        )}>
+                            {message.userName}
+                            {message.role === 'host' && " (Host)"}
+                        </span>
+                    )}
+
+                    <div className={messageClass}>
+                        {message.type === 'voice' ? (
+                            <AudioPlayer
+                                src={message.content}
+                                duration={message.duration}
+                                isCompact={true}
+                                isOwn={isOwn}
+                            />
+                        ) : (
+                            <div className="break-words whitespace-pre-wrap text-sm">
+                                {message.content}
+                            </div>
+                        )}
+                        <div className={cn(
+                            "text-[10px] mt-1",
+                            isOwn
+                                ? "text-blue-100"
+                                : message.role === 'host'
+                                    ? "text-purple-100"
+                                    : "text-muted-foreground"
+                        )}>
+                            {format(getPhilippineTime(message.timestamp), "h:mm a")}
+                        </div>
+                    </div>
                 </div>
             </div>
         );
@@ -276,64 +347,43 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage }: ChatM
     }, {});
 
     return (
-        <div className="relative flex-grow">
-            <ScrollArea className="h-full p-4" ref={scrollAreaRef}>
-                {messages.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                        <div className="text-center text-muted-foreground py-8">
-                            <h3 className="text-lg font-medium mb-2">No messages yet</h3>
-                            <p className="text-sm">Start a conversation!</p>
+        <div className="relative flex-grow pb-4">
+            <ScrollArea className="h-[calc(95vh-180px)]" ref={scrollAreaRef}>
+                <div className="space-y-6 px-2">
+                    {messages.length === 0 ? (
+                        <div className="flex items-center justify-center h-full min-h-[300px]">
+                            <div className="text-center text-muted-foreground p-8 rounded-lg bg-muted/5">
+                                <Mic className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+                                <h3 className="text-lg font-medium mb-2">No messages yet</h3>
+                                <p className="text-sm text-muted-foreground/70">Start a conversation!</p>
+                            </div>
                         </div>
-                    </div>
-                ) : (
-                    Object.entries(groupedMessages).map(([date, dateMessages]) => (
-                        <div key={date}>
-                            <div className="flex justify-center my-6">
-                                <div className="bg-muted/30 rounded-full px-4 py-1 text-xs text-muted-foreground">
-                                    {date}
+                    ) : (
+                        Object.entries(groupedMessages).map(([date, dateMessages]) => (
+                            <div key={date} className="space-y-4">
+                                <div className="flex justify-center sticky top-0 z-10 py-2">
+                                    <div className="bg-muted/30 rounded-full px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm">
+                                        {date}
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    {dateMessages.map((message, index) => (
+                                        <div key={`${date}-${message.uid}-${index}`}>
+                                            {renderMessage(message)}
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
-                            {dateMessages.map((message, index) => {
-                                const isSelf = message.userId === userData?.id;
-                                const showAvatar = index === 0 ||
-                                    dateMessages[index - 1]?.userId !== message.userId;
-
-                                // Create a unique key for each message container
-                                const messageKey = `${date}-${message.uid}-${index}`;
-
-                                return (
-                                    <div
-                                        key={messageKey}
-                                        className={`mb-4 flex ${isSelf ? "justify-end" : "justify-start"}`}
-                                    >
-                                        <div className={`max-w-[75%] ${isSelf ? "items-end" : "items-start"} flex flex-col`}>
-                                            {!isSelf && showAvatar && (
-                                                <div className="flex items-center mb-1 ml-1">
-                                                    <Avatar className="h-6 w-6 mr-2">
-                                                        <AvatarFallback className="bg-primary/10 text-xs">
-                                                            {getInitials(message.userName)}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    <span className="text-xs font-medium">
-                                                        {message.userName}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            {renderMessage(message, isSelf)}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ))
-                )}
-                <div ref={messagesEndRef} />
+                        ))
+                    )}
+                </div>
+                <div ref={messagesEndRef} className="h-4" />
             </ScrollArea>
 
             {hasNewMessages && (
                 <button
                     onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
-                    className="absolute bottom-2 right-4 bg-primary text-white rounded-full px-3 py-1 text-xs shadow-md animate-bounce"
+                    className="absolute bottom-4 right-4 bg-primary text-primary-foreground rounded-full px-4 py-2 text-xs font-medium shadow-lg hover:bg-primary/90 transition-colors"
                 >
                     New messages ↓
                 </button>

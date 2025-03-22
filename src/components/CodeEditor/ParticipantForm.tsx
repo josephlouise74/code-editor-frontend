@@ -69,6 +69,8 @@ export function ParticipantForm({ token, roomId }: any) {
             localStorage.setItem('currentUserName', data.name);
             localStorage.setItem('currentUserEmail', data.email);
 
+            localStorage.setItem('role', 'participant');
+
             // Get current URL and params
             const currentParams = new URLSearchParams(searchParams.toString());
             console.log('Current params before modification:', currentParams.toString());

@@ -55,20 +55,6 @@ const JoinRoomForm = observer(() => {
         },
     });
 
-    const onParticipantSubmit = async (data: ParticipantFormValues) => {
-        try {
-            participantForm.reset();
-            setShowParticipantDialog(false);
-
-            if (roomData) {
-                router.push(
-                    `/room/${roomData.roomId}?token=${encodeURIComponent(roomData.token)}&name=${encodeURIComponent(data.name)}&email=${encodeURIComponent(data.email)}`
-                );
-            }
-        } catch (error) {
-            console.error("Failed to save participant:", error);
-        }
-    };
 
     const onSubmit = async (data: JoinRoomFormValues) => {
         try {
@@ -77,6 +63,10 @@ const JoinRoomForm = observer(() => {
             if (response && response.roomId) {
                 form.reset();
                 localStorage.setItem('host', 'Host');
+                localStorage.setItem('role', 'host');
+                localStorage.setItem('adminEmail', response.email);
+                localStorage.setItem('adminName', response.name);
+                console.log('response', response)
                 router.push(
                     `/room/${response.roomId}?token=${encodeURIComponent(response.token)}&host=${encodeURIComponent('Host')}&adminEmail=${encodeURIComponent(response.email)}&collaborator=false`
                 );
