@@ -353,3 +353,97 @@ export const uploadLessonPdf = async (file: File): Promise<string> => {
         throw error;
     }
 };
+
+interface UploadVoiceMessageOptions {
+    file: Blob;
+    folder?: string;
+    maxSizeMB?: number;
+}
+
+interface UploadVoiceMessageResponse {
+    url: string | null;
+    error: string | null;
+    filePath: string | null;
+}
+
+const MAX_VOICE_MESSAGE_SIZE_MB = 10; // 10MB limit for voice messages
+
+/**
+ * Validates a voice message file based on type and size constraints.
+ */
+const validateVoiceMessage = (file: Blob, maxSizeMB: number): string | null => {
+    // Allowed MIME type for WebM audio
+    const allowedType = 'audio/webm';
+    if (file.type !== allowedType) {
+        return 'Invalid audio format. Only WebM audio is supported.';
+    }
+
+    // Check file size
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+        return `File size must be under ${maxSizeMB}MB`;
+    }
+
+    return null;
+};
+
+/**
+ * Uploads a voice message to Supabase Storage.
+ * @param options - Upload options including the file blob and optional folder path
+ * @returns Promise with upload result containing URL and error status
+ */
+export const uploadVoiceMessage = async ({
+    file,
+    folder = 'voice-messages',
+    maxSizeMB = MAX_VOICE_MESSAGE_SIZE_MB
+}: UploadVoiceMessageOptions): Promise<UploadVoiceMessageResponse> => {
+    try {
+        // Validate the file
+        const validationError = validateVoiceMessage(file, maxSizeMB);
+        if (validationError) {
+            return {
+                url: null,
+                error: validationError,
+                filePath: null
+            };
+        }
+
+        // Generate a unique filename
+        const timestamp = new Date().getTime();
+        const randomString = Math.random().toString(36).substring(2, 15);
+        const fileName = `voice-${timestamp}-${randomString}.webm`;
+        const filePath = `${folder}/${fileName}`;
+
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+            .from('monkey-images') // Using your existing bucket
+            .upload(filePath, file, {
+                cacheControl: '3600',
+                contentType: 'audio/webm',
+                upsert: false
+            });
+
+        if (uploadError) {
+            throw new Error(uploadError.message);
+        }
+
+        // Get the public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from('monkey-images')
+            .getPublicUrl(filePath);
+
+        return {
+            url: publicUrl,
+            error: null,
+            filePath
+        };
+
+    } catch (error) {
+        console.error('Voice message upload failed:', error);
+        return {
+            url: null,
+            error: error instanceof Error ? error.message : 'Failed to upload voice message',
+            filePath: null
+        };
+    }
+};

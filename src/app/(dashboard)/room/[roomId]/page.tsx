@@ -33,7 +33,7 @@ import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { io } from "socket.io-client";
+import { io, Socket } from "socket.io-client";
 
 
 
@@ -48,13 +48,16 @@ interface ConsoleLog {
 // Update socket type
 const mockSocket: {
     id?: string;
+    connected?: boolean;
     emit: (event: string, data: any) => void;
     on: (event: string, callback: (data: any) => void) => void;
     off: (event: string, callback: (data: any) => void) => void;
+    disconnect: () => void;
 } = {
     emit: (event, data) => console.log(`Socket emitted: ${event}`, data),
     on: (event, callback) => { },
     off: (event, callback) => { },
+    disconnect: () => console.log('Socket disconnected'),
 };
 
 // Dynamically import CodeMirror to avoid SSR issues
@@ -100,6 +103,7 @@ export default function HomeScreen() {
     );
     // Add loading state
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [typingUsers, setTypingUsers] = useState<Array<{ id: string; name: string }>>([]);
 
     const [showChatSidebar, setShowChatSidebar] = useState<boolean>(false);
     const [srcDoc, setSrcDoc] = useState<any>("");
@@ -116,7 +120,7 @@ export default function HomeScreen() {
     // Add this with other state declarationsco
     const [isMessageSending, setIsMessageSending] = useState<boolean>(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const socket = useRef<typeof mockSocket>(mockSocket);
+    const socket = useRef<typeof mockSocket | null>(mockSocket);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
     // Get roomId and token from URL parameters
     const params = useParams();
@@ -283,88 +287,177 @@ export default function HomeScreen() {
     }, [showChatSidebar]);
 
 
-    // Add WebSocket connection effect
     useEffect(() => {
         const currentRoomId = params.roomId as string;
         if (!currentRoomId || !token) return;
 
-        // Create WebSocket connection
-        const ws = new WebSocket('ws://localhost:7400');
-        wsRef.current = ws;
+        console.log('🔄 Initializing connection for room:', currentRoomId);
 
-        // Connection opened
-        ws.addEventListener('open', () => {
-            console.log('WebSocket connection established');
-            setWsConnected(true);
+        try {
+            // Initialize socket with proper configuration
+            socket.current = io("http://localhost:7400", {
+                transports: ['polling', 'websocket'],
+                withCredentials: true,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                timeout: 10000
+            });
 
-            // Send initialization message
-            const userId = userData?.id || socket.current?.id || `user-${nanoid()}`;
-            const initMessage: WebSocketMessage = {
-                type: 'init',
-                data: {
+            socket.current.on("connect", () => {
+                console.log('✅ Socket connected:', socket.current?.id);
+                setIsConnected(true);
+
+                // Join chat room with correct event name and data structure
+                socket.current?.emit("join-chat", {
                     roomId: currentRoomId,
-                    userId
+                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                    email: searchParams.get('participantEmail') || userData?.email || '',
+                    role: searchParams.get('participantRole')
+                });
+            });
+
+            // Set up event listeners
+            setupSocketEventListeners();
+
+            return () => {
+                console.log('🧹 Cleaning up socket connection...');
+                if (socket.current) {
+                    socket.current.disconnect();
+                    socket.current = null;
                 }
             };
-            ws.send(JSON.stringify(initMessage));
-
-            toast.success('Connected to code sync server');
-        });
-
-        // Listen for messages
-        ws.addEventListener('message', (event) => {
-            try {
-                const message: WebSocketMessage = JSON.parse(event.data);
-
-                switch (message.type) {
-                    case 'init':
-                        // Handle initial code state if needed
-                        if (message.data.html) setHtmlCode(message.data.html);
-                        if (message.data.css) setCssCode(message.data.css);
-                        if (message.data.javascript) setJsCode(message.data.javascript);
-                        break;
-
-                    case 'codeUpdate':
-                        // Update code based on language
-                        if (message.data.language === 'html' && message.data.code) {
-                            setHtmlCode(message.data.code);
-                        } else if (message.data.language === 'css' && message.data.code) {
-                            setCssCode(message.data.code);
-                        } else if (message.data.language === 'javascript' && message.data.code) {
-                            setJsCode(message.data.code);
-                        }
-                        break;
-
-                    case 'cursorUpdate':
-                        // Handle cursor updates if needed
-                        // This would require additional UI elements to show other users' cursors
-                        break;
-                }
-            } catch (error) {
-                console.error('Error parsing WebSocket message:', error);
-            }
-        });
-
-        // Connection closed
-        ws.addEventListener('close', () => {
-            console.log('WebSocket connection closed');
-            setWsConnected(false);
-            toast.warning('Disconnected from code sync server');
-        });
-
-        // Connection error
-        ws.addEventListener('error', (error) => {
-            console.error('WebSocket error:', error);
-            toast.error('Error connecting to code sync server');
-        });
-
-        // Clean up on unmount
-        return () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
-            }
-        };
+        } catch (error) {
+            console.error('❌ Socket connection error:', error);
+            toast.error('Failed to connect to chat server');
+        }
     }, [params.roomId, token, userData?.id]);
+
+    // Add the setupSocketEventListeners function
+    const setupSocketEventListeners = () => {
+        if (!socket.current) return;
+
+        // Chat history
+        socket.current.on("chat-history", (messages: ChatMessage[]) => {
+            console.log('📚 Received chat history:', messages);
+            const processedMessages = messages.map(message => ({
+                ...message,
+                isSelf: message.userId === socket.current?.id
+            }));
+            setMessages(processedMessages);
+        });
+
+        // New message
+        socket.current.on("chat-message", (message: ChatMessage) => {
+            console.log('📨 New message received:', message);
+            setMessages(prev => {
+                if (prev.some(m => m.id === message.id)) return prev;
+                const newMessage = {
+                    ...message,
+                    isSelf: message.userId === socket.current?.id
+                };
+                return [...prev, newMessage];
+            });
+        });
+
+        // User presence
+        socket.current.on("user-joined", (user: any) => {
+            console.log('👋 User joined:', user);
+            setUsers(prev => [...prev, { ...user, online: true }]);
+            addSystemMessage(`${user.name} joined the room`);
+        });
+
+        socket.current.on("user-left", (userId: string) => {
+            const user = users.find(u => u.id === userId);
+            if (user) {
+                setUsers(prev => prev.map(u =>
+                    u.id === userId ? { ...u, online: false } : u
+                ));
+                addSystemMessage(`${user.name} left the room`);
+            }
+        });
+
+        socket.current.on("room-users", (users: any[]) => {
+            console.log('👥 Room users updated:', users);
+            setUsers(users.map(user => ({ ...user, online: true })));
+        });
+
+        // Typing indicators
+        socket.current.on("user-typing", ({ userId, name, isTyping }) => {
+            setTypingUsers(prev => {
+                if (isTyping) {
+                    return [...prev.filter(u => u.id !== userId), { id: userId, name }];
+                }
+                return prev.filter(u => u.id !== userId);
+            });
+        });
+
+        // Error handling
+        socket.current.on("connect_error", (error) => {
+            console.error('❌ Connection error:', error);
+            toast.error(`Connection failed: ${error.message}`);
+        });
+
+        socket.current.on("error", (error) => {
+            console.error('❌ Socket error:', error);
+            toast.error(error.message);
+        });
+
+        socket.current.on("disconnect", () => {
+            console.log('🔌 Disconnected from server');
+            setIsConnected(false);
+            toast.warning("Disconnected from chat server. Attempting to reconnect...");
+        });
+    };
+
+    // Update the sendMessage function
+    const sendMessage = () => {
+        if (!messageInput.trim() || isMessageSending || !socket.current?.connected) return;
+
+        try {
+            setIsMessageSending(true);
+
+            socket.current.emit("send-message", {
+                roomId,
+                name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                email: searchParams.get('participantEmail') || userData?.email || '',
+                message: messageInput.trim(),
+                role: searchParams.get('participantRole')
+            });
+
+            setMessageInput("");
+        } catch (error) {
+            console.error('Error sending message:', error);
+            toast.error('Failed to send message');
+        } finally {
+            setIsMessageSending(false);
+        }
+    };
+
+    // Update the typing indicator function
+    const handleTyping = (isTyping: boolean) => {
+        if (socket.current?.connected) {
+            socket.current.emit("typing", {
+                roomId,
+                name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                isTyping
+            });
+        }
+    };
+
+    // Add a helper function for system messages
+    const addSystemMessage = (content: string) => {
+        const systemMessage: ChatMessage = {
+            id: generateMessageId(),
+            content,
+            userId: 'system',
+            userName: 'System',
+            userEmail: 'system@example.com',
+            timestamp: Date.now(),
+            system: true
+        };
+        setMessages(prev => [...prev, systemMessage]);
+    };
 
     useEffect(() => {
         const currentRoomId = params.roomId as string;
@@ -387,10 +480,10 @@ export default function HomeScreen() {
                 if (!roomDataSuccess) return;
 
                 // Then fetch chat data
-                const chatDataSuccess = await getAllDataChats(currentRoomId);
-                if (!chatDataSuccess) {
-                    toast.warning('Failed to load chat history');
-                }
+                /*  const chatDataSuccess = await getAllDataChats(currentRoomId);
+                 if (!chatDataSuccess) {
+                     toast.warning('Failed to load chat history');
+                 } */
 
                 // Set username and connect to room
 
@@ -432,178 +525,108 @@ export default function HomeScreen() {
         };
     }, [params.roomId, searchParams]);
 
-    // Connect to room with type annotations
-    const connectToRoom = (roomId: string): void => {
-        console.log(`Connecting to room: ${roomId}`);
 
-        // Initialize socket if not already done
-        if (!socket.current) {
-            // Connect to your socket server
-            socket.current = io("http://localhost:3001", {
+
+    // First, add the ChatMessage interface
+    interface ChatMessage {
+        id: string;
+        content: string;
+        userId: string;
+        userName: string;
+        userEmail: string;
+        userRole?: string;
+        timestamp: number;
+        system?: boolean;
+    }
+
+    // Update the connectToRoom function
+    const connectToRoom = (roomId: string): void => {
+        console.log(`🔄 Attempting to connect to room: ${roomId}`);
+
+        if (socket.current?.connected) {
+            console.log('⚠️ Socket already connected, skipping initialization');
+            return;
+        }
+
+        try {
+            // Initialize socket connection with proper configuration
+            socket.current = io("http://localhost:7400", {
+                transports: ['polling', 'websocket'],
                 withCredentials: true,
-                transports: ["websocket"],
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                timeout: 10000
             });
 
-
-
-            // Handle connection event
             socket.current.on("connect", () => {
-                console.log("Socket connected:", socket.current?.id);
+                console.log('✅ Socket connected:', socket.current?.id);
                 setIsConnected(true);
 
-                // Get user info from URL or state
-                const role = searchParams.get('participantRole');
-                const userName = role === 'participant'
-                    ? searchParams.get('participantName') || ''
-                    : userData?.name || '';
-                const userEmail = role === 'participant'
-                    ? searchParams.get('participantEmail') || ''
-                    : userData?.email || '';
-
-                // Generate a temporary ID if socket.current.id is undefined
-                const socketId = socket.current.id || `temp-${nanoid()}`;
-
-                // Join the room with user data
-                socket.current?.emit("join-room", {
+                // Join chat room with correct event name and data structure
+                socket.current?.emit("join-chat", {
                     roomId,
-                    user: {
-                        id: socketId,
-                        name: userName,
-                        email: userEmail
-                    }
-                });
-
-                // Add system message
-                setMessages(prev => [
-                    ...prev,
-                    {
-                        id: generateMessageId(),
-                        sender: "System",
-                        content: `Connected to room ${roomId}`,
-                        timestamp: new Date().toISOString(),
-                        system: true,
-                    }
-                ]);
-            });
-
-            // Handle code updates from other users
-            socket.current.on("code-update", (data) => {
-                if (data.type === "html") setHtmlCode(data.content);
-                if (data.type === "css") setCssCode(data.content);
-                if (data.type === "js") setJsCode(data.content);
-
-                // Add notification about the change
-                toast.info(`${data.userName || 'Someone'} updated the ${data.type} code`);
-            });
-
-            // Handle chat messages
-            socket.current.on("chat-message", (message) => {
-                // Only add the message if it's not from the current user
-                // or if we don't already have it in our messages array
-                setMessages(prev => {
-                    // Check if message already exists to prevent duplicates
-                    const exists = prev.some(m => m.id === message.id);
-                    if (exists) return prev;
-
-                    // Add isSelf flag for UI rendering
-                    const isSelf = message.userId === userData.id || message.userId === userData.accessCode;
-                    return [...prev, { ...message, isSelf }];
+                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                    email: searchParams.get('participantEmail') || userData?.email || '',
+                    role: searchParams.get('participantRole')
                 });
             });
 
-            // Handle chat history
-            socket.current.on("chat-history", (messages) => {
-                // Process chat history
-                const processedMessages = messages.map((message: any) => ({
+            // Chat event listeners matching backend events
+            socket.current.on("chat-history", (messages: ChatMessage[]) => {
+                console.log('📚 Received chat history:', messages.length);
+                const processedMessages = messages.map(message => ({
                     ...message,
-                    isSelf: message.userId === userData.id || message.userId === userData.accessCode
+                    isSelf: message.userId === socket.current?.id
                 }));
                 setMessages(processedMessages);
             });
 
-            // Handle user joined events
-            socket.current.on("user-joined", (user) => {
-                setUsers(prev => {
-                    // Check if user already exists
-                    const exists = prev.some(u => u.id === user.id);
-                    if (exists) return prev;
-                    return [...prev, { ...user, online: true }];
+            socket.current.on("chat-message", (message: ChatMessage) => {
+                console.log('📨 New message:', message);
+                setMessages(prev => {
+                    if (prev.some(m => m.id === message.id)) return prev;
+                    return [...prev, { ...message, isSelf: message.userId === socket.current?.id }];
                 });
-
-                // Add system message for user joining
-                const joinMessage = {
-                    id: generateMessageId(),
-                    content: `${user.name} joined the room`,
-                    userId: 'system',
-                    userName: 'System',
-                    timestamp: Date.now(),
-                    system: true
-                };
-                setMessages(prev => [...prev, joinMessage]);
             });
 
-            // Handle user left events
-            socket.current.on("user-left", (userId) => {
-                // Find the user who left
-                const user = users.find(u => u.id === userId);
-
-                // Update users list
-                setUsers(prev => prev.map(u =>
-                    u.id === userId ? { ...u, online: false } : u
-                ));
-
-                // Add system message for user leaving
-                if (user) {
-                    const leaveMessage = {
-                        id: generateMessageId(),
-                        content: `${user.name} left the room`,
-                        userId: 'system',
-                        userName: 'System',
-                        timestamp: Date.now(),
-                        system: true
-                    };
-                    setMessages(prev => [...prev, leaveMessage]);
-                }
-            });
-
-            // Handle room users list
-            socket.current.on("room-users", (roomUsers) => {
-                setUsers(roomUsers.map((user: any) => ({ ...user, online: true })));
-            });
-
-            // Handle code updates
-            socket.current.on("code-update", (update) => {
-                if (update.userId !== userData.id) {
-                    if (update.type === 'html') {
-                        setHtmlCode(update.content);
-                    } else if (update.type === 'css') {
-                        setCssCode(update.content);
-                    } else if (update.type === 'js') {
-                        setJsCode(update.content);
+            socket.current.on("user-typing", ({ userId, name, isTyping }) => {
+                setTypingUsers(prev => {
+                    if (isTyping) {
+                        return [...prev, { id: userId, name }];
                     }
-                }
+                    return prev.filter(user => user.id !== userId);
+                });
             });
 
-            // Handle errors
+            socket.current.on("room-users", (users: any[]) => {
+                console.log('👥 Room users:', users);
+                setUsers(users.map(user => ({ ...user, online: true })));
+            });
+
+            socket.current.on("join-success", (response) => {
+                console.log('✅ Join success:', response);
+                toast.success(`Joined room ${response.roomId}`);
+            });
+
             socket.current.on("error", (error) => {
-                console.error("Socket error:", error);
-                const errorMessage = typeof error === 'string' ? error : error.message || 'Unknown error';
-                toast.error("Connection error: " + errorMessage);
+                console.error('❌ Socket error:', error);
+                toast.error(error.message);
             });
 
-            // Handle disconnect
             socket.current.on("disconnect", () => {
+                console.log('🔌 Disconnected from server');
                 setIsConnected(false);
-                toast.warning("Disconnected from server. Trying to reconnect...");
+                toast.warning("Disconnected from chat server");
             });
 
-            // Handle errors
-            socket.current.on("error", (error) => {
-                console.error("Socket error:", error);
-                toast.error("Connection error: " + error);
-            });
+        } catch (error) {
+            console.error('❌ Error connecting to room:', error);
+            toast.error('Failed to connect to chat server');
         }
     };
+
+
 
     // Add this function to handle console interception
     // Memoized console interceptor
@@ -1017,54 +1040,138 @@ export default function HomeScreen() {
     }, [isConnected, roomId, userData?.id, wsConnected]);
 
 
-    // Update the sendMessage function
-    const sendMessage = async () => {
-        if (!messageInput.trim() || isMessageSending) return;
-
-        try {
-            setIsMessageSending(true);
-            const role = searchParams.get('participantRole');
-            const senderName = role === 'participant'
-                ? searchParams.get('participantName') || ''
-                : userData?.name || '';
-            const senderEmail = role === 'participant'
-                ? searchParams.get('participantEmail') || ''
-                : userData?.email || '';
-
-            const messageData = {
-                roomId,
-                token: token || '',
-                name: senderName,
-                email: senderEmail,
-                message: messageInput.trim(),
-            };
-
-            const response = await sendNewMessageInGroupChatApiRequest(messageData);
-
-            if (response.success) {
-                const newMessage: any = {
-                    ...response.data,
-                    isSelf: true
-                };
-
-                setMessages(prev => [...prev, newMessage]);
-                setMessageInput("");
-
-                // Emit to socket if connected
-                if (isConnected) {
-                    socket.current.emit("chat-message", {
-                        room: roomId,
-                        message: { ...newMessage, isSelf: false },
-                    });
-                }
+    /*    // First, update the sendMessage function
+       const sendMessage = async () => {
+           if (!messageInput.trim() || isMessageSending || !socket.current?.connected) return;
+   
+           try {
+               setIsMessageSending(true);
+               const newMessage = {
+                   id: generateMessageId(),
+                   content: messageInput.trim(),
+                   userId: socket.current.id,
+                   userName: userData?.name || searchParams.get('participantName') || 'Anonymous',
+                   userEmail: userData?.email || searchParams.get('participantEmail') || '',
+                   userRole: searchParams.get('participantRole'),
+                   timestamp: Date.now()
+               };
+   
+               // Emit to socket
+               socket.current.emit("send-message", {
+                   roomId,
+                   name: newMessage.userName,
+                   email: newMessage.userEmail,
+                   message: newMessage.content,
+                   role: newMessage.userRole
+               });
+   
+               setMessageInput("");
+           } catch (error) {
+               console.error('Error sending message:', error);
+               toast.error('Failed to send message');
+           } finally {
+               setIsMessageSending(false);
+           }
+       };
+    
+        // Update the typing indicator to match backend
+        const handleTyping = (isTyping: boolean) => {
+            if (socket.current?.connected) {
+                socket.current.emit("typing", {
+                    roomId,
+                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                    isTyping
+                });
             }
-        } catch (error) {
-            console.error('Error in sendMessage:', error);
-            toast.error('Failed to send message');
-        } finally {
-            setIsMessageSending(false);
-        }
-    };
+        }; */
+
+    // Update the chat form JSX
+    const renderChatForm = () => (
+        <div className="p-4 border-t-2 bg-white relative z-40">
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    sendMessage();
+                }}
+                className="flex space-x-2"
+            >
+                <Input
+                    value={messageInput}
+                    onChange={(e) => {
+                        setMessageInput(e.target.value);
+                        handleTyping(true);
+                    }}
+                    onBlur={() => handleTyping(false)}
+                    placeholder="Type a message..."
+                    className="flex-grow"
+                    disabled={!isConnected || isMessageSending}
+                />
+                <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!isConnected || isMessageSending || !messageInput.trim()}
+                    className="border"
+                >
+                    {isMessageSending ? "Sending..." : "Send"}
+                </Button>
+            </form>
+            {typingUsers.length > 0 && (
+                <div className="text-sm text-muted-foreground mt-1">
+                    {typingUsers.map(user => user.name).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+                </div>
+            )}
+        </div>
+    );
+
+    // Update the TabsContent to use the new form
+    <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-full">
+        <ChatMessages
+            messages={messages}
+            userData={userData}
+            roomId={roomId}
+            onNewMessage={handleNewMessage}
+        />
+        {renderChatForm()}
+    </TabsContent>
+
+    /*     // Update the sendMessage function
+        const sendMessage = () => {
+            if (!messageInput.trim() || isMessageSending || !socket.current?.connected) return;
+    
+            try {
+                setIsMessageSending(true);
+    
+                socket.current.emit("send-message", {
+                    roomId,
+                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                    email: searchParams.get('participantEmail') || userData?.email || '',
+                    message: messageInput.trim(),
+                    role: searchParams.get('participantRole')
+                }, (response: { success: boolean; error?: string }) => {
+                    if (!response.success) {
+                        throw new Error(response.error || 'Failed to send message');
+                    }
+                    setMessageInput("");
+                });
+            } catch (error) {
+                console.error('Error sending message:', error);
+                toast.error('Failed to send message');
+            } finally {
+                setIsMessageSending(false);
+            }
+        };
+    
+        // Update the typing indicator to match backend
+        const handleTyping = (isTyping: boolean) => {
+            if (socket.current?.connected) {
+                socket.current.emit("typing", {
+                    roomId,
+                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
+                    isTyping
+                });
+            }
+        }; */
+
     // Clear console logs
     const clearConsole = () => {
         setConsoleLogs([]);
@@ -1162,89 +1269,7 @@ export default function HomeScreen() {
                             roomId={roomId}
                             onNewMessage={handleNewMessage}
                         />
-
-                        <div className="p-4 border-t-2 bg-white relative z-40">
-                            <form
-                                onSubmit={async (e) => {
-                                    e.preventDefault();
-                                    if (!messageInput.trim() || isMessageSending) return;
-
-                                    try {
-                                        setIsMessageSending(true);
-
-                                        const messageData = {
-                                            content: messageInput.trim(),
-                                            userId: userData?.accessCode || socket.current?.id || '',
-                                            userName: userData?.name || '',
-                                            email: userData?.email || '',
-                                            roomId: roomId,
-                                            timestamp: Date.now(),
-                                            type: 'text'
-                                        };
-                                        console.log("messageData", messageData)
-                                        // Send to backend API to store in database
-                                        const response = await sendNewMessageInGroupChatApiRequest(messageData as any);
-
-                                        if (response.success) {
-                                            // Emit to socket for real-time updates
-                                            socket.current?.emit('chat-message', {
-                                                roomId,
-                                                message: messageData
-                                            });
-
-                                            // Update local state
-                                            setMessages(prev => [...prev, { ...messageData, isSelf: true }]);
-                                            setMessageInput('');
-                                        } else {
-                                            throw new Error('Failed to send message');
-                                        }
-                                    } catch (error) {
-                                        console.error('Error sending message:', error);
-                                        toast.error('Failed to send message. Please try again.');
-                                    } finally {
-                                        setIsMessageSending(false);
-                                    }
-                                }}
-                                className="flex space-x-2"
-                            >
-                                <Input
-                                    value={messageInput}
-                                    onChange={(e) => setMessageInput(e.target.value)}
-                                    placeholder="Type a message..."
-                                    className="flex-grow"
-                                    disabled={isMessageSending}
-                                />
-                                <Button
-                                    type="submit"
-                                    size="sm"
-                                    disabled={isMessageSending || !messageInput.trim()}
-                                    className="border"
-                                >
-                                    {isMessageSending ? "Sending..." : "Send"}
-                                </Button>
-                                <Input
-                                    type="file"
-                                    id="image-upload"
-                                    className="hidden"
-                                    accept="image/*"
-                                    onChange={handleImageUpload}
-                                    disabled={isUploadingImage}
-                                />
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-9 w-9"
-                                    disabled={isUploadingImage}
-                                    onClick={() => document.getElementById('image-upload')?.click()}
-                                >
-                                    {isUploadingImage ? (
-                                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-                                    ) : (
-                                        <Image className="h-4 w-4" />
-                                    )}
-                                </Button>
-                            </form>
-                        </div>
+                        {renderChatForm()}
                     </TabsContent>
 
                     <TabsContent value="users" className="p-0 m-0 h-full">
