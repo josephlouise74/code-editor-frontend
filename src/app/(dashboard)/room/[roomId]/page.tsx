@@ -537,29 +537,18 @@ export default function HomeScreen() {
             console.error('Error handling voice recording:', error);
             toast.error('Failed to access microphone. Please check permissions.');
             setIsRecording(false);
+            setRecordingDuration(0);
         }
     };
 
     const stopRecording = () => {
-        console.log('Stopping voice recording');
         if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
         }
-
-        clearRecordingTimer();
         setIsRecording(false);
     };
 
-    const clearRecordingTimer = () => {
-        if (durationTimerRef.current) {
-            clearInterval(durationTimerRef.current);
-            durationTimerRef.current = null;
-        }
-    };
-
     const startRecording = async () => {
-        console.log('Starting voice recording');
-
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 echoCancellation: true,
@@ -574,14 +563,13 @@ export default function HomeScreen() {
         });
 
         audioChunks.current = [];
-
-        setupRecorderEventHandlers(recorder, stream);
+        recorder.ondataavailable = handleDataAvailable;
+        recorder.onstop = () => handleRecordingStop(stream);
 
         setMediaRecorder(recorder);
         recorder.start(1000);
         setIsRecording(true);
-
-        startRecordingTimer(recorder);
+        setRecordingDuration(0); // Reset duration when starting
     };
 
     const setupRecorderEventHandlers = (recorder: MediaRecorder, stream: MediaStream) => {
@@ -665,28 +653,31 @@ export default function HomeScreen() {
         audioChunks.current = [];
     };
 
-    const startRecordingTimer = (recorder: MediaRecorder) => {
-        const startTime = Date.now();
-        durationTimerRef.current = setInterval(() => {
-            const newDuration = Math.floor((Date.now() - startTime) / 1000);
-            setRecordingDuration(newDuration);
-
-            if (newDuration >= 60) {
-                console.log('Maximum recording duration reached, stopping');
-                stopRecording();
-            }
-        }, 1000);
-    };
-
-    // Cleanup effect
+    // Add this useEffect to handle the recording timer
     useEffect(() => {
+        let interval: NodeJS.Timeout;
+
+        if (isRecording) {
+            const startTime = Date.now();
+            interval = setInterval(() => {
+                const duration = Math.floor((Date.now() - startTime) / 1000);
+                setRecordingDuration(duration);
+
+                // Automatically stop recording after 60 seconds
+                if (duration >= 60) {
+                    handleVoiceRecording();
+                }
+            }, 1000);
+        } else {
+            setRecordingDuration(0);
+        }
+
         return () => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
+            if (interval) {
+                clearInterval(interval);
             }
-            clearRecordingTimer();
         };
-    }, [mediaRecorder]);
+    }, [isRecording]);
 
 
 
@@ -698,15 +689,31 @@ export default function HomeScreen() {
         try {
             setIsMessageSending(true);
 
-            socket.current.emit("send-message", {
-                roomId,
-                name: searchParams.get('participantName') || userData?.name || 'Anonymous',
-                email: searchParams.get('participantEmail') || userData?.email || '',
-                message: messageInput.trim(),
-                role: searchParams.get('participantRole')
-            });
+            const participantRole = searchParams.get('participantRole');
+            let messageData;
 
+            if (participantRole === 'participant') {
+                messageData = {
+                    roomId,
+                    name: searchParams.get('participantName') || 'Anonymous',
+                    email: searchParams.get('participantEmail') || '',
+                    message: messageInput.trim(),
+                    role: 'participant'
+                };
+            } else {
+                // Default to host if role is null or 'host'
+                messageData = {
+                    roomId,
+                    name: 'Host',
+                    email: searchParams.get('adminEmail') || '',
+                    message: messageInput.trim(),
+                    role: 'host'
+                };
+            }
+
+            socket.current.emit("send-message", messageData);
             setMessageInput("");
+
         } catch (error) {
             console.error('Error sending message:', error);
             toast.error('Failed to send message');
@@ -1243,51 +1250,6 @@ export default function HomeScreen() {
     }, [isConnected, roomId, userData?.id, wsConnected]);
 
 
-    /*    // First, update the sendMessage function
-       const sendMessage = async () => {
-           if (!messageInput.trim() || isMessageSending || !socket.current?.connected) return;
-   
-           try {
-               setIsMessageSending(true);
-               const newMessage = {
-                   id: generateMessageId(),
-                   content: messageInput.trim(),
-                   userId: socket.current.id,
-                   userName: userData?.name || searchParams.get('participantName') || 'Anonymous',
-                   userEmail: userData?.email || searchParams.get('participantEmail') || '',
-                   userRole: searchParams.get('participantRole'),
-                   timestamp: Date.now()
-               };
-   
-               // Emit to socket
-               socket.current.emit("send-message", {
-                   roomId,
-                   name: newMessage.userName,
-                   email: newMessage.userEmail,
-                   message: newMessage.content,
-                   role: newMessage.userRole
-               });
-   
-               setMessageInput("");
-           } catch (error) {
-               console.error('Error sending message:', error);
-               toast.error('Failed to send message');
-           } finally {
-               setIsMessageSending(false);
-           }
-       };
-    
-        // Update the typing indicator to match backend
-        const handleTyping = (isTyping: boolean) => {
-            if (socket.current?.connected) {
-                socket.current.emit("typing", {
-                    roomId,
-                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
-                    isTyping
-                });
-            }
-        }; */
-
     // Update the chat form JSX
     const renderChatForm = () => (
         <div className="p-4 border-t-2 bg-white relative z-40">
@@ -1307,36 +1269,57 @@ export default function HomeScreen() {
                     onBlur={() => handleTyping(false)}
                     placeholder="Type a message..."
                     className="flex-grow"
-                    disabled={!isConnected || isMessageSending}
+                    disabled={!isConnected || isMessageSending || isRecording}
                 />
-                <Button
-                    type="submit"
-                    size="sm"
-                    disabled={!isConnected || isMessageSending || !messageInput.trim()}
-                    className="border"
-                >
-                    {isMessageSending ? "Sending..." : "Send"}
-                </Button>
 
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`h-9 w-9 ${isRecording ? 'bg-red-500 hover:bg-red-600' : ''}`}
-                    onClick={handleVoiceRecording}
-                    disabled={isVoiceLoading}
-                >
-                    {isVoiceLoading ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-                    ) : isRecording ? (
-                        <div className="flex items-center">
-                            <Square className="h-4 w-4 text-white" />
-                            <span className="ml-2 text-xs text-white">{recordingDuration}s</span>
+                {!isRecording ? (
+                    <>
+                        <Button
+                            type="submit"
+                            size="sm"
+                            disabled={!isConnected || isMessageSending || !messageInput.trim()}
+                            className="border"
+                        >
+                            {isMessageSending ? "Sending..." : "Send"}
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                            onClick={handleVoiceRecording}
+                            disabled={isVoiceLoading}
+                        >
+                            {isVoiceLoading ? (
+                                <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                            ) : (
+                                <Mic className="h-4 w-4" />
+                            )}
+                        </Button>
+                    </>
+                ) : (
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-full">
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400 min-w-[2rem]">
+                                    {recordingDuration}s
+                                </span>
+                            </div>
                         </div>
-                    ) : (
-                        <Mic className="h-4 w-4" />
-                    )}
-                </Button>
+
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleVoiceRecording}
+                            className="h-9 w-9 bg-red-500 hover:bg-red-600 text-white"
+                        >
+                            <Square className="h-4 w-4" />
+                        </Button>
+                    </div>
+                )}
             </form>
+
             {typingUsers.length > 0 && (
                 <div className="text-sm text-muted-foreground mt-1">
                     {typingUsers.map(user => user.name).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
@@ -1362,43 +1345,6 @@ export default function HomeScreen() {
         </div>
     </TabsContent>
 
-    /*     // Update the sendMessage function
-        const sendMessage = () => {
-            if (!messageInput.trim() || isMessageSending || !socket.current?.connected) return;
-    
-            try {
-                setIsMessageSending(true);
-    
-                socket.current.emit("send-message", {
-                    roomId,
-                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
-                    email: searchParams.get('participantEmail') || userData?.email || '',
-                    message: messageInput.trim(),
-                    role: searchParams.get('participantRole')
-                }, (response: { success: boolean; error?: string }) => {
-                    if (!response.success) {
-                        throw new Error(response.error || 'Failed to send message');
-                    }
-                    setMessageInput("");
-                });
-            } catch (error) {
-                console.error('Error sending message:', error);
-                toast.error('Failed to send message');
-            } finally {
-                setIsMessageSending(false);
-            }
-        };
-    
-        // Update the typing indicator to match backend
-        const handleTyping = (isTyping: boolean) => {
-            if (socket.current?.connected) {
-                socket.current.emit("typing", {
-                    roomId,
-                    name: searchParams.get('participantName') || userData?.name || 'Anonymous',
-                    isTyping
-                });
-            }
-        }; */
 
     // Clear console logs
     const clearConsole = () => {

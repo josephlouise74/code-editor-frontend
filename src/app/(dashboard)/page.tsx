@@ -1,22 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Lock, Hash, Loader2, ArrowRight } from "lucide-react";
-import { observer } from "mobx-react-lite";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { roomStore } from "@/lib/store/roomStore";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { theme } from "@/lib/theme";
-import unicode from '../../../public/unicode.png'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowRight, Hash, Loader2, Lock } from "lucide-react";
+import { observer } from "mobx-react-lite";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
+import unicode from '../../../public/unicode.png';
 
 // Schema definitions
 const joinRoomSchema = z.object({
@@ -35,8 +34,6 @@ type ParticipantFormValues = z.infer<typeof participantSchema>;
 
 const JoinRoomForm = observer(() => {
     const router = useRouter();
-    const [showParticipantDialog, setShowParticipantDialog] = useState(false);
-    const [roomData, setRoomData] = useState<{ roomId: string; token: string } | null>(null);
 
     // Form setup
     const form = useForm<JoinRoomFormValues>({
@@ -75,6 +72,7 @@ const JoinRoomForm = observer(() => {
             console.error("Failed to join room:", error);
         }
     };
+
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-white p-4">
@@ -185,6 +183,8 @@ const JoinRoomForm = observer(() => {
                         Made with ❤️ for the best collaboration experience
                     </p>
                 </div>
+
+
             </div>
         </div>
     );

@@ -48,6 +48,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
     "react-toastify": "^11.0.5",
+    "react-virtualized": "^9.22.6",
     "sisig-tapa": "file:",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
