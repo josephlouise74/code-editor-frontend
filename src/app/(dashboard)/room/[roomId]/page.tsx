@@ -810,11 +810,12 @@ export default function HomeScreen() {
                             uid: chat.uid,
                             userId: chat.uid,
                             userName: chat.userName,
-                            content: chat.message,
+                            content: chat.type === 'voice' ? chat.content : chat.message,
                             timestamp: new Date(chat.timestamp).getTime(),
                             email: chat.email,
                             isSelf: chat.email === userData?.email,
                             type: chat.type,
+                            duration: chat.duration || 0,
                             role: chat.role
                         }));
 
@@ -828,6 +829,8 @@ export default function HomeScreen() {
 
                 // Connect to room and fetch other data
                 connectToRoom(currentRoomId);
+
+
                 fetchHistory();
 
                 // Fetch history code
@@ -1240,40 +1243,40 @@ export default function HomeScreen() {
     };
 
 
-
-    const getAllDataChats = useCallback(async (roomId: string) => {
-        try {
-            const response = await getAllChats(roomId);
-
-            if (!response?.success || !response?.data?.chats) {
-                throw new Error('Invalid chat data received');
+    /* 
+        const getAllDataChats = useCallback(async (roomId: string) => {
+            try {
+                const response = await getAllChats(roomId);
+    
+                if (!response?.success || !response?.data?.chats) {
+                    throw new Error('Invalid chat data received');
+                }
+    
+                const formattedChats = response.data.chats.map((chat: any) => ({
+                    uid: chat.uid,
+                    userId: chat.uid, // Using uid as userId for consistency
+                    userName: chat.userName,
+                    content: chat.message,
+                    timestamp: new Date(chat.timestamp).getTime(),
+                    email: chat.email,
+                    isSelf: chat.email === userData?.email,
+                    type: chat.type,
+                    role: chat.role
+                }));
+    
+                setMessages(formattedChats);
+    
+                // Optionally store total messages and last updated time
+                const { totalMessages, lastUpdated } = response.data;
+                console.log(`Loaded ${totalMessages} messages, last updated: ${lastUpdated}`);
+    
+                return true;
+            } catch (error) {
+                console.error('Error fetching chat messages:', error);
+                toast.error('Failed to load chat messages');
+                return false;
             }
-
-            const formattedChats = response.data.chats.map((chat: any) => ({
-                uid: chat.uid,
-                userId: chat.uid, // Using uid as userId for consistency
-                userName: chat.userName,
-                content: chat.message,
-                timestamp: new Date(chat.timestamp).getTime(),
-                email: chat.email,
-                isSelf: chat.email === userData?.email,
-                type: chat.type,
-                role: chat.role
-            }));
-
-            setMessages(formattedChats);
-
-            // Optionally store total messages and last updated time
-            const { totalMessages, lastUpdated } = response.data;
-            console.log(`Loaded ${totalMessages} messages, last updated: ${lastUpdated}`);
-
-            return true;
-        } catch (error) {
-            console.error('Error fetching chat messages:', error);
-            toast.error('Failed to load chat messages');
-            return false;
-        }
-    }, [userData?.email]);
+        }, [userData?.email]); */
 
     // Optimized code change handler
     const handleCodeChange = useCallback((type: 'html' | 'css' | 'js', value: string) => {
@@ -1387,7 +1390,10 @@ export default function HomeScreen() {
 
     // Update the TabsContent to use the new form
     <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-screen">
-        <ScrollArea className="flex-1 h-[calc(100vh-180px)]">
+        <ScrollArea
+            className="flex-1 h-[calc(100vh-180px)]"
+            scrollHideDelay={0}
+        >
             <div className="flex flex-col h-full">
                 <ChatMessages
                     messages={messages}
@@ -1397,7 +1403,7 @@ export default function HomeScreen() {
                 />
             </div>
         </ScrollArea>
-        <div className="sticky bottom-0 w-full bg-white">
+        <div className="sticky bottom-0 w-full bg-white dark:bg-gray-900">
             {renderChatForm()}
         </div>
     </TabsContent>
@@ -1494,7 +1500,10 @@ export default function HomeScreen() {
 
 
                     <TabsContent value="chat" className="flex-grow flex flex-col p-0 m-0 h-screen">
-                        <ScrollArea className="flex-1 h-[calc(100vh-180px)] ">
+                        <ScrollArea
+                            className="flex-1 h-[calc(100vh-180px)]"
+                            scrollHideDelay={0}
+                        >
                             <div className="flex flex-col h-full">
                                 <ChatMessages
                                     messages={messages}
@@ -1504,7 +1513,7 @@ export default function HomeScreen() {
                                 />
                             </div>
                         </ScrollArea>
-                        <div className="sticky bottom-0 w-full bg-white">
+                        <div className="sticky bottom-0 w-full bg-white dark:bg-gray-900">
                             {renderChatForm()}
                         </div>
                     </TabsContent>

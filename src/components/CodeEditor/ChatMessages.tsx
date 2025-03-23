@@ -1,21 +1,21 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { toZonedTime } from 'date-fns-tz';
-import { Mic, Pause, Play, Volume2, ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Mic, Pause, Play, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState, useMemo, useCallback, JSX } from "react";
 import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
 
+// Define clear type interfaces
 interface Message {
     uid: string;
     userId: string;
     userName: string;
     content: string;
-    timestamp: number;
+    timestamp: number | string;
     email?: string;
     isSelf?: boolean;
     type?: 'text' | 'voice';
@@ -47,19 +47,22 @@ interface AudioPlayerProps {
     messageType: string;
 }
 
-interface MessageTypes {
-    HOST: 'host';
-    MEMBER: 'member';
-    SELF: 'self';
+type MessageType = 'host' | 'member' | 'self';
+
+interface MessageStyles {
+    container: string;
+    button: string;
+    text: string;
+    duration: string;
 }
 
-const MESSAGE_TYPES: MessageTypes = {
-    HOST: 'host',
-    MEMBER: 'member',
-    SELF: 'self'
-} as const;
+const MESSAGE_TYPES = {
+    HOST: 'host' as MessageType,
+    MEMBER: 'member' as MessageType,
+    SELF: 'self' as MessageType
+};
 
-const getInitials = (name: string) => {
+const getInitials = (name: string): string => {
     if (!name) return "??";
     return name
         .split(' ')
@@ -69,101 +72,196 @@ const getInitials = (name: string) => {
         .slice(0, 2);
 };
 
-const getPhilippineTime = (timestamp: number) => {
+const getPhilippineTime = (timestamp: number | string): Date => {
     try {
-        const date = new Date(timestamp);
+        const date = typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp);
         return toZonedTime(date, 'Asia/Manila');
     } catch (error) {
         console.error("Error converting timestamp:", error);
-        return new Date(timestamp);
+        return typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp);
     }
 };
 
-const AudioPlayer = ({ src, duration = 0, isCompact = false, messageType }: AudioPlayerProps) => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+// Voice message features
+const voiceMessageFeatures = {
+    maxDuration: 300, // 5 minutes
+    waveformBars: 40,
+    supportedFormats: ['audio/webm', 'audio/mp4'],
+    compressionOptions: {
+        sampleRate: 22050,
+        bitRate: 96000
+    }
+};
+
+// Playback features
+const playbackFeatures = {
+    speeds: [0.5, 1, 1.5, 2],
+    volumeControl: true,
+    rememberPlaybackPosition: true,
+    autoPlayNext: false
+};
+
+// Improved audio player with better error handling and URL validation
+const AudioPlayer = ({ src, duration = 0, isCompact = false, messageType }: AudioPlayerProps): JSX.Element => {
+    const [isPlaying, setIsPlaying] = useState<boolean>(false);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [currentTime, setCurrentTime] = useState<number>(0);
+    const [audioError, setAudioError] = useState<boolean>(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
+    // Add console logs for debugging
+    const getValidUrl = useCallback((url: string): string => {
+        console.log('Voice Message Raw Data:', {
+            originalUrl: url,
+            duration: duration,
+            messageType: messageType
+        });
+
+        if (!url) return '';
+
+        // Remove @ symbol and trim whitespace
+        const cleanedUrl = url.replace(/^@/, '').trim();
+
+        console.log('Processed URL:', {
+            cleanedUrl,
+            hasSupabase: cleanedUrl.includes('supabase.co'),
+            hasVoiceMessages: cleanedUrl.includes('/voice-messages/')
+        });
+
+        // Validate if it's a Supabase URL
+        if (cleanedUrl.includes('supabase.co') && cleanedUrl.includes('/voice-messages/')) {
+            return cleanedUrl;
+        }
+
+        console.error("Invalid voice message URL:", url);
+        return '';
+    }, []);
+
+    const cleanUrl = useMemo(() => getValidUrl(src), [src, getValidUrl]);
+
     useEffect(() => {
-        const audio = new Audio(src);
+        console.log('Audio Setup:', {
+            cleanUrl,
+            isLoading,
+            hasError: audioError,
+            currentTime,
+            isPlaying
+        });
+
+        if (!cleanUrl) {
+            setAudioError(true);
+            setIsLoading(false);
+            return;
+        }
+
+        const audio = new Audio();
         audioRef.current = audio;
 
-        const handleLoadedMetadata = () => {
-            setIsLoading(false);
+        const setupAudio = () => {
+            // Set CORS and type hints for better compatibility
+            audio.crossOrigin = 'anonymous';
+            audio.preload = 'metadata';
+
+            // Add event listeners
+            const handleCanPlay = () => {
+                setIsLoading(false);
+                setAudioError(false);
+            };
+
+            const handleLoadStart = () => {
+                setIsLoading(true);
+            };
+
+            const handleTimeUpdate = () => {
+                setCurrentTime(audio.currentTime);
+            };
+
+            const handleEnded = () => {
+                setIsPlaying(false);
+                setCurrentTime(0);
+            };
+
+            const handleError = () => {
+                console.error('Audio error:', cleanUrl);
+                setAudioError(true);
+                setIsLoading(false);
+            };
+
+            audio.addEventListener('loadstart', handleLoadStart);
+            audio.addEventListener('canplay', handleCanPlay);
+            audio.addEventListener('timeupdate', handleTimeUpdate);
+            audio.addEventListener('ended', handleEnded);
+            audio.addEventListener('error', handleError);
+
+            // Set source and load
+            try {
+                audio.src = cleanUrl;
+                audio.load();
+            } catch (error) {
+                console.error('Error loading audio:', error);
+                setAudioError(true);
+                setIsLoading(false);
+            }
+
+            return () => {
+                audio.removeEventListener('loadstart', handleLoadStart);
+                audio.removeEventListener('canplay', handleCanPlay);
+                audio.removeEventListener('timeupdate', handleTimeUpdate);
+                audio.removeEventListener('ended', handleEnded);
+                audio.removeEventListener('error', handleError);
+            };
         };
 
-        const handleEnded = () => {
-            setIsPlaying(false);
-        };
-
-        const handleError = (e: ErrorEvent) => {
-            console.error('Audio error:', e);
-            setIsPlaying(false);
-            setIsLoading(false);
-            toast.error('Unable to play audio message');
-        };
-
-        audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-        audio.addEventListener('ended', handleEnded);
-        audio.addEventListener('error', handleError);
+        const cleanup = setupAudio();
 
         return () => {
-            audio.pause();
-            audio.src = '';
-            audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-            audio.removeEventListener('ended', handleEnded);
-            audio.removeEventListener('error', handleError);
-            audio.remove();
+            cleanup();
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.src = '';
+                audioRef.current = null;
+            }
         };
-    }, [src]);
+    }, [cleanUrl]);
 
-    const togglePlayPause = () => {
-        if (!audioRef.current || isLoading) return;
+    // Toggle play/pause with better error handling
+    const togglePlayPause = useCallback(async () => {
+        if (!audioRef.current || isLoading || audioError) return;
 
-        if (isPlaying) {
-            audioRef.current.pause();
-        } else {
-            // Stop all other playing audio elements
-            document.querySelectorAll('audio').forEach(audio => {
-                if (audio !== audioRef.current) audio.pause();
-            });
+        try {
+            if (isPlaying) {
+                audioRef.current.pause();
+                setIsPlaying(false);
+            } else {
+                // Stop all other playing audio
+                document.querySelectorAll('audio').forEach(audio => {
+                    audio.pause();
+                });
 
-            audioRef.current.play().catch(err => {
-                console.error('Error playing audio:', err);
-                toast.error('Failed to play audio');
-            });
+                // Attempt to play with proper error handling
+                try {
+                    await audioRef.current.play();
+                    setIsPlaying(true);
+                } catch (error) {
+                    console.error('Playback error:', error);
+                    setAudioError(true);
+                    toast.error('Failed to play audio. Try refreshing the page.');
+                }
+            }
+        } catch (error) {
+            console.error('Toggle play/pause error:', error);
         }
-        setIsPlaying(!isPlaying);
-    };
+    }, [isPlaying, isLoading, audioError]);
 
-    const getStylesByMessageType = () => {
-        switch (messageType) {
-            case MESSAGE_TYPES.SELF:
-                return {
-                    container: "bg-blue-500/10",
-                    button: "bg-blue-500 hover:bg-blue-600 text-white",
-                    text: "text-blue-700 dark:text-blue-300",
-                    duration: "bg-blue-500/20 text-blue-700"
-                };
-            case MESSAGE_TYPES.HOST:
-                return {
-                    container: "bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10",
-                    button: "bg-gradient-to-r from-purple-500 to-indigo-500 text-white",
-                    text: "text-indigo-700 dark:text-indigo-300",
-                    duration: "bg-indigo-500/20 text-indigo-700"
-                };
-            default:
-                return {
-                    container: "bg-gray-100 dark:bg-gray-800",
-                    button: "bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600",
-                    text: "text-gray-700 dark:text-gray-300",
-                    duration: "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                };
-        }
-    };
+    const formatTime = useCallback((time: number): string => {
+        const minutes = Math.floor(time / 60);
+        const seconds = Math.floor(time % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }, []);
 
-    const styles = getStylesByMessageType();
+    const styles = useMemo((): MessageStyles => getStylesByMessageType(messageType), [messageType]);
 
+    // Render optimized UI
     return (
         <div className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2",
@@ -171,11 +269,15 @@ const AudioPlayer = ({ src, duration = 0, isCompact = false, messageType }: Audi
         )}>
             <button
                 onClick={togglePlayPause}
-                disabled={isLoading}
+                disabled={isLoading || audioError}
                 className={cn(
-                    "flex items-center justify-center rounded-full w-8 h-8 transition-all duration-200",
-                    styles.button
+                    "flex items-center justify-center rounded-full w-8 h-8",
+                    "transition-all duration-200",
+                    styles.button,
+                    (isLoading || audioError) && "opacity-50 cursor-not-allowed"
                 )}
+                title={audioError ? "Failed to load audio" : isLoading ? "Loading..." : isPlaying ? "Pause" : "Play"}
+                type="button"
             >
                 {isLoading ? (
                     <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
@@ -186,32 +288,160 @@ const AudioPlayer = ({ src, duration = 0, isCompact = false, messageType }: Audi
                 )}
             </button>
 
-            <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                    <Mic className="h-3.5 w-3.5 opacity-60" />
-                    <span className={cn("text-xs font-medium", styles.text)}>
-                        Voice message
-                    </span>
+            <div className="flex flex-col gap-1 flex-grow min-w-[120px]">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                        <Mic className="h-3.5 w-3.5 opacity-60" />
+                        <span className={cn("text-xs font-medium",)}>
+                            Voice message
+                        </span>
+                    </div>
+                    {!audioError && (
+                        <span className={cn(
+                            "text-[10px] font-medium px-2 py-0.5 rounded-full text-green-500",
+
+                        )}>
+                            {isPlaying ? formatTime(currentTime) : formatTime(duration)}
+                        </span>
+                    )}
                 </div>
 
-                <div className={cn(
-                    "flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-medium",
-                    styles.duration
-                )}>
-                    {duration ? `${Math.round(duration)}s` : '•••'}
-                </div>
+                {isPlaying && !audioError && (
+                    <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-current transition-all duration-200"
+                            style={{
+                                width: `${(currentTime / (duration || 1)) * 100}%`,
+                                opacity: 0.5
+                            }}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );
 };
 
-export function ChatMessages({ messages, userData, roomId, onNewMessage, participantRole, participantEmail, participantName, adminEmail, host }: ChatMessagesProps) {
+// Styles utility function with proper typing
+const getStylesByMessageType = (messageType: string): MessageStyles => {
+    switch (messageType) {
+        case MESSAGE_TYPES.SELF:
+            return {
+                container: "bg-blue-500/10 dark:bg-blue-500/20",
+                button: "bg-blue-500 hover:bg-blue-600 text-white",
+                text: "text-blue-700 dark:text-blue-300",
+                duration: "bg-blue-500/20 text-blue-700 dark:text-blue-300"
+            };
+        case MESSAGE_TYPES.HOST:
+            return {
+                container: "bg-indigo-500/10 dark:bg-indigo-500/20",
+                button: "bg-indigo-500 hover:bg-indigo-600 text-white",
+                text: "text-indigo-700 dark:text-indigo-300",
+                duration: "bg-indigo-500/20 text-indigo-700 dark:text-indigo-300"
+            };
+        default:
+            return {
+                container: "bg-gray-100 dark:bg-gray-800",
+                button: "bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600",
+                text: "text-gray-700 dark:text-gray-300",
+                duration: "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+            };
+    }
+};
+
+// Improved utility components with explicit types
+interface MessageAvatarProps {
+    userName: string;
+    isHost: boolean;
+}
+
+const MessageAvatar = ({ userName, isHost }: MessageAvatarProps): JSX.Element => (
+    <div className="relative group-hover:scale-105 transition-transform duration-200">
+        <Avatar className="h-8 w-8 flex-shrink-0">
+            <AvatarFallback
+                className={cn(
+                    "text-xs font-medium",
+                    isHost
+                        ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 border border-indigo-500"
+                        : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                )}
+            >
+                {getInitials(userName)}
+            </AvatarFallback>
+        </Avatar>
+    </div>
+);
+
+interface MessageHeaderProps {
+    userName: string;
+    isHost: boolean;
+    className: string;
+}
+
+const MessageHeader = ({ userName, isHost, className }: MessageHeaderProps): JSX.Element => (
+    isHost ? (
+        <div className="flex items-center gap-1.5 mb-1">
+            <div className="flex items-center px-2 py-0.5 rounded-full 
+                          bg-indigo-100 dark:bg-indigo-900/30">
+                <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                    {userName} • Host
+                </span>
+            </div>
+        </div>
+    ) : (
+        <span className={cn("text-xs font-medium mb-1 px-1", className)}>
+            {userName}
+        </span>
+    )
+);
+
+interface MessageTimestampProps {
+    timestamp: number | string;
+    isHost: boolean;
+    isSelf: boolean;
+    getTime: (timestamp: number | string) => Date;
+}
+
+const MessageTimestamp = ({ timestamp, isHost, isSelf, getTime }: MessageTimestampProps): JSX.Element => (
+    <div className={cn(
+        "text-[10px] mt-1",
+        isSelf ? "text-right" : "text-left",
+        isSelf || isHost ? "text-white/70" : "text-gray-500"
+    )}>
+        {format(getTime(timestamp), "h:mm a")}
+    </div>
+);
+
+const voiceMessageStyles = {
+    container: cn(
+        "rounded-xl shadow-lg",
+        "backdrop-filter backdrop-blur-sm",
+        "border border-opacity-10",
+        "transition-all duration-200"
+    ),
+    button: cn(
+        "hover:scale-105",
+        "active:scale-95",
+        "transition-transform"
+    ),
+    waveform: cn(
+        "flex items-center gap-0.5",
+        "h-8 w-full",
+        "opacity-75"
+    ),
+    timer: cn(
+        "font-mono text-sm",
+        "tabular-nums"
+    )
+};
+
+export function ChatMessages({ messages, userData, roomId, onNewMessage, participantRole, participantEmail, participantName, adminEmail, host }: ChatMessagesProps): JSX.Element {
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const [hasNewMessages, setHasNewMessages] = useState(false);
+    const [hasNewMessages, setHasNewMessages] = useState<boolean>(false);
     const scrollAreaRef = useRef<HTMLDivElement>(null);
-    const prevMessagesLengthRef = useRef(messages.length);
-    const [page, setPage] = useState(1);
-    const [loading, setLoading] = useState(false);
+    const prevMessagesLengthRef = useRef<number>(messages.length);
+    const [page, setPage] = useState<number>(1);
+    const [loading, setLoading] = useState<boolean>(false);
     const loadingTriggerRef = useRef<HTMLDivElement | null>(null);
     const searchParams = useSearchParams();
 
@@ -259,7 +489,25 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
         return () => observer.disconnect();
     }, [loading]);
 
-    const isOwnMessage = (messageEmail?: string) => {
+    useEffect(() => {
+        const scrollToBottom = () => {
+            if (messagesEndRef.current) {
+                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+            }
+        };
+
+        scrollToBottom();
+
+        if (messages.length > prevMessagesLengthRef.current) {
+            scrollToBottom();
+        }
+
+        const timeoutId = setTimeout(scrollToBottom, 100);
+
+        return () => clearTimeout(timeoutId);
+    }, [messages]);
+
+    const isOwnMessage = useCallback((messageEmail?: string): boolean => {
         if (!messageEmail) return false;
 
         const participantRole = searchParams.get('participantRole');
@@ -268,32 +516,41 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
             : searchParams.get('adminEmail');
 
         return messageEmail.toLowerCase() === currentUserEmail?.toLowerCase();
-    };
+    }, [searchParams]);
 
-    const renderMessage = (message: Message) => {
+    const renderMessage = useCallback((message: Message): JSX.Element => {
+
+        console.log('Rendering Message 3333333333333333333333:', message);
         const isSelf = message.isSelf || isOwnMessage(message.email);
         const isHost = message.role === 'host';
         const messageType = isSelf ? MESSAGE_TYPES.SELF : isHost ? MESSAGE_TYPES.HOST : MESSAGE_TYPES.MEMBER;
 
-        const messageStyles = {
-            [MESSAGE_TYPES.SELF]: {
+        interface MessageStylesConfig {
+            container: string;
+            message: string;
+            name: string;
+            wrapper: string;
+        }
+
+        const messageStyles: Record<MessageType, MessageStylesConfig> = {
+            self: {
                 container: "justify-end",
                 message: "bg-blue-500 text-white ml-auto rounded-tr-2xl rounded-tl-2xl rounded-bl-2xl rounded-br-none",
                 name: "text-blue-600 dark:text-blue-400",
                 wrapper: "items-end"
             },
-            [MESSAGE_TYPES.HOST]: {
+            host: {
                 container: "justify-start",
                 message: "bg-indigo-600 text-white rounded-tr-2xl rounded-tl-2xl rounded-br-2xl rounded-bl-none",
                 name: "text-indigo-600 dark:text-indigo-400",
                 wrapper: "items-start"
             },
-            [MESSAGE_TYPES.MEMBER]: {
+            member: {
                 container: "justify-start",
                 message: "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-tr-2xl rounded-tl-2xl rounded-br-2xl rounded-bl-none",
                 name: "text-gray-600 dark:text-gray-400",
                 wrapper: "items-start"
-            },
+            }
         };
 
         const style = messageStyles[messageType];
@@ -322,17 +579,21 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
                         message.type === 'voice' && "p-2",
                         "transition-all duration-200 hover:shadow-md"
                     )}>
-                        {message.type === 'voice' ? (
-                            <AudioPlayer
-                                src={message.content}
-                                duration={message.duration}
-                                isCompact={true}
-                                messageType={messageType}
-                            />
-                        ) : (
-                            <div className="text-sm leading-relaxed break-words">
-                                {message.content}
-                            </div>
+                        {message.type === 'voice' && (
+                            <>
+                                {console.log('Rendering Voice Message:', {
+                                    content: message.content,
+                                    duration: message.duration,
+                                    messageType,
+                                    filePath: message.filePath
+                                })}
+                                <AudioPlayer
+                                    src={message.content as any || ''}
+                                    duration={message.duration}
+                                    isCompact={true}
+                                    messageType={messageType}
+                                />
+                            </>
                         )}
 
                         <MessageTimestamp
@@ -352,18 +613,21 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
                 )}
             </div>
         );
-    };
+    }, [isOwnMessage]);
 
-    const groupedMessages = messages.reduce((groups: Record<string, Message[]>, message) => {
-        const date = format(getPhilippineTime(message.timestamp), "MMMM d, yyyy");
-        if (!groups[date]) {
-            groups[date] = [];
-        }
-        groups[date].push(message);
-        return groups;
-    }, {});
+    // Group messages by date
+    const groupedMessages = useMemo(() => {
+        return messages.reduce<Record<string, Message[]>>((groups, message) => {
+            const date = format(getPhilippineTime(message.timestamp), "MMMM d, yyyy");
+            if (!groups[date]) {
+                groups[date] = [];
+            }
+            groups[date].push(message);
+            return groups;
+        }, {});
+    }, [messages]);
 
-    const loadMoreMessages = async () => {
+    const loadMoreMessages = async (): Promise<void> => {
         if (loading) return;
         setLoading(true);
         try {
@@ -380,8 +644,12 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
 
     return (
         <div className="relative flex-grow pb-4">
-            <ScrollArea className="h-[calc(95vh-180px)]" ref={scrollAreaRef}>
-                <div className="space-y-6 px-2">
+            <ScrollArea
+                className="h-[calc(95vh-180px)]"
+                ref={scrollAreaRef}
+                scrollHideDelay={0}
+            >
+                <div className="space-y-6 px-2 min-h-full">
                     {messages.length === 0 ? (
                         <div className="flex items-center justify-center h-full min-h-[300px]">
                             <div className="text-center p-8 rounded-xl bg-slate-50 dark:bg-slate-800/50
@@ -408,7 +676,7 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
                                 </div>
                                 <div className="space-y-3">
                                     {dateMessages.map((message) => (
-                                        <div key={`message-${message.uid || `${date}-${message.timestamp}-${message.userId}`}`}>
+                                        <div key={`message-${message.uid || `${date}-${String(message.timestamp)}-${message.userId}`}`}>
                                             {renderMessage(message)}
                                         </div>
                                     ))}
@@ -417,7 +685,11 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
                         ))
                     )}
                 </div>
-                <div ref={messagesEndRef} className="h-4" />
+                <div
+                    ref={messagesEndRef}
+                    className="h-4"
+                    style={{ float: 'left', clear: 'both' }}
+                />
             </ScrollArea>
 
             {hasNewMessages && (
@@ -437,52 +709,3 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
         </div>
     );
 }
-
-const MessageAvatar = ({ userName, isHost }: { userName: string; isHost: boolean }) => (
-    <div className="relative group-hover:scale-105 transition-transform duration-200">
-        <Avatar className="h-8 w-8 flex-shrink-0">
-            <AvatarFallback
-                className={cn(
-                    "text-xs font-medium",
-                    isHost
-                        ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 border border-indigo-500"
-                        : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                )}
-            >
-                {getInitials(userName)}
-            </AvatarFallback>
-        </Avatar>
-    </div>
-);
-
-const MessageHeader = ({ userName, isHost, className }: { userName: string; isHost: boolean; className: string }) => (
-    isHost ? (
-        <div className="flex items-center gap-1.5 mb-1">
-            <div className="flex items-center px-2 py-0.5 rounded-full 
-                          bg-indigo-100 dark:bg-indigo-900/30">
-                <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                    {userName} • Host
-                </span>
-            </div>
-        </div>
-    ) : (
-        <span className={cn("text-xs font-medium mb-1 px-1", className)}>
-            {userName}
-        </span>
-    )
-);
-
-const MessageTimestamp = ({ timestamp, isHost, isSelf, getTime }: {
-    timestamp: number;
-    isHost: boolean;
-    isSelf: boolean;
-    getTime: (timestamp: number) => Date;
-}) => (
-    <div className={cn(
-        "text-[10px] mt-1",
-        isSelf ? "text-right" : "text-left",
-        isSelf || isHost ? "text-white/70" : "text-gray-500"
-    )}>
-        {format(getTime(timestamp), "h:mm a")}
-    </div>
-);
