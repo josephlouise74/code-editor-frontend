@@ -15,12 +15,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAllChats, getAllHistoryCode, getRoomData, sendNewMessageInGroupChatApiRequest, updateSaveChangesCodeApi } from "@/lib/api/roomApi";
 import { roomStore } from "@/lib/store/roomStore";
-import { uploadImage, uploadVoiceMessage } from "@/lib/supabase/supabase";
+import { uploadVoiceMessage } from "@/lib/supabase/supabase";
 import { css as cssLang } from "@codemirror/lang-css";
 import { html as htmlLang } from "@codemirror/lang-html";
 import { javascript as jsLang } from "@codemirror/lang-javascript";
 import {
-    Image,
     Loader2,
     MessageSquare,
     Mic,
@@ -35,7 +34,7 @@ import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { io, Socket } from "socket.io-client";
+import { io } from "socket.io-client";
 
 
 
@@ -532,6 +531,7 @@ export default function HomeScreen() {
                 stopRecording();
             } else {
                 await startRecording();
+
             }
         } catch (error) {
             console.error('Error handling voice recording:', error);
@@ -617,35 +617,39 @@ export default function HomeScreen() {
 
     const sendVoiceMessage = async (uploadResult: any) => {
         const userRole = localStorage.getItem('role');
-        const messageData: any = {
-            content: uploadResult.url!,
-            userId: userData?.accessCode || socket.current?.id || '',
-            userName: userData?.name || '',
+        const messageData = {
+            roomId: roomId,
+            name: userData?.name || '',
             email: userRole === 'host'
                 ? localStorage.getItem('adminEmail')
                 : localStorage.getItem('participantEmail'),
-            roomId: roomId,
-            timestamp: Date.now(),
+            content: uploadResult.url,
             type: 'voice',
             duration: recordingDuration,
             filePath: uploadResult.filePath,
-            uid: nanoid(),
-            role: userRole || 'participant',
+            role: userRole || 'participant'
         };
 
         console.log('Sending voice message data:', messageData);
 
-        const response = await sendNewMessageInGroupChatApiRequest(messageData);
+        try {
+            // First, emit to socket for real-time update
+            socket.current?.emit('send-message', messageData);
 
-        if (response.success) {
-            socket.current?.emit('chat-message', { roomId, message: messageData });
-            setMessages(prev => [...prev, { ...messageData, isSelf: true }]);
-            console.log('Voice message added to chat');
-        } else {
+            // Then, store in database
+            const response = await sendNewMessageInGroupChatApiRequest(messageData);
+
+            if (!response.success) {
+                throw new Error('Failed to store voice message');
+            }
+
+            // No need to manually update messages, it will come through socket
+            console.log('Voice message sent successfully');
+        } catch (error) {
+            console.error('Error sending voice message:', error);
             throw new Error('Failed to send voice message');
         }
     };
-
     const cleanup = (stream: MediaStream) => {
         stream.getTracks().forEach(track => track.stop());
         setIsLoading(false);
@@ -683,7 +687,7 @@ export default function HomeScreen() {
 
 
     // Update the sendMessage function
-    const sendMessage = () => {
+    const sendMessage = async () => {
         if (!messageInput.trim() || isMessageSending || !socket.current?.connected) return;
 
         try {
@@ -698,20 +702,28 @@ export default function HomeScreen() {
                     name: searchParams.get('participantName') || 'Anonymous',
                     email: searchParams.get('participantEmail') || '',
                     message: messageInput.trim(),
-                    role: 'participant'
+                    role: 'participant',
+                    token: token // Add token for API auth
                 };
             } else {
-                // Default to host if role is null or 'host'
                 messageData = {
                     roomId,
                     name: 'Host',
                     email: searchParams.get('adminEmail') || '',
                     message: messageInput.trim(),
-                    role: 'host'
+                    role: 'host',
+                    token: token // Add token for API auth
                 };
             }
 
+            // Send via socket
             socket.current.emit("send-message", messageData);
+
+            // Send via API and log response
+            const apiResponse = await sendNewMessageInGroupChatApiRequest(messageData);
+
+            console.log('Message API Response:', apiResponse);
+
             setMessageInput("");
 
         } catch (error) {
@@ -747,6 +759,27 @@ export default function HomeScreen() {
         setMessages(prev => [...prev, systemMessage]);
     };
 
+    // First, add this interface for type safety
+    interface ChatResponse {
+        success: boolean;
+        message: string;
+        data: {
+            roomId: string;
+            chats: Array<{
+                uid: string;
+                userName: string;
+                email: string;
+                role: 'host' | 'participant';
+                timestamp: string;
+                type: 'text' | 'voice';
+                message: string;
+            }>;
+            totalMessages: number;
+            lastUpdated: string;
+        };
+    }
+
+    // Then modify the useEffect
     useEffect(() => {
         const currentRoomId = params.roomId as string;
         const currentToken = searchParams.get('token');
@@ -767,23 +800,42 @@ export default function HomeScreen() {
                 console.log("roomdata", roomDataSuccess)
                 if (!roomDataSuccess) return;
 
-                // Then fetch chat data
-                /*  const chatDataSuccess = await getAllDataChats(currentRoomId);
-                 if (!chatDataSuccess) {
-                     toast.warning('Failed to load chat history');
-                 } */
-
-                // Set username and connect to room
-
-                connectToRoom(currentRoomId);
-                fetchHistory()
-                // Fetch and store history data
+                // Fetch chat messages
                 try {
-                    setIsLoading(true);
+                    const chatResponse = await getAllChats(currentRoomId);
+                    console.log('Chat Response:', chatResponse);
+
+                    if (chatResponse?.success && chatResponse?.data?.chats) {
+                        const formattedChats = chatResponse.data.chats.map((chat: any) => ({
+                            uid: chat.uid,
+                            userId: chat.uid,
+                            userName: chat.userName,
+                            content: chat.message,
+                            timestamp: new Date(chat.timestamp).getTime(),
+                            email: chat.email,
+                            isSelf: chat.email === userData?.email,
+                            type: chat.type,
+                            role: chat.role
+                        }));
+
+                        setMessages(formattedChats);
+                        console.log(`Loaded ${chatResponse.data.totalMessages} messages, last updated: ${chatResponse.data.lastUpdated}`);
+                    }
+                } catch (error) {
+                    console.error('Error loading chat messages:', error);
+                    toast.warning('Failed to load chat history');
+                }
+
+                // Connect to room and fetch other data
+                connectToRoom(currentRoomId);
+                fetchHistory();
+
+                // Fetch history code
+                try {
                     const historyCodeResponse = await getAllHistoryCode(currentRoomId);
-                    console.log("hostName", hostName)
-                    console.log("hs", historyCodeResponse.data.history)
-                    setIsLoading(false);
+                    console.log("hostName", hostName);
+                    console.log("hs", historyCodeResponse.data.history);
+
                     if (historyCodeResponse?.success && historyCodeResponse?.data?.history) {
                         setCodeHistory(historyCodeResponse.data.history);
                     } else {
@@ -791,15 +843,14 @@ export default function HomeScreen() {
                     }
                 } catch (error) {
                     console.error('Error fetching code history:', error);
-                    setIsLoading(false);
                     toast.error('Failed to load code history');
-
                 }
 
             } catch (error) {
-                setIsLoading(false);
                 console.error('Error initializing room:', error);
                 toast.error('Failed to initialize room');
+            } finally {
+                setIsLoading(false);
             }
         };
 
@@ -811,7 +862,7 @@ export default function HomeScreen() {
             setUsers([]);
             setUserData(null);
         };
-    }, [params.roomId, searchParams]);
+    }, [params.roomId, searchParams,]); // Added userData?.email as dependency
 
 
 
@@ -1189,21 +1240,33 @@ export default function HomeScreen() {
     };
 
 
-    // Optimized chat data fetching
+
     const getAllDataChats = useCallback(async (roomId: string) => {
         try {
             const response = await getAllChats(roomId);
 
-            if (!response?.data) {
+            if (!response?.success || !response?.data?.chats) {
                 throw new Error('Invalid chat data received');
             }
 
-            const formattedChats: any[] = response.data.map((chat: any) => ({
-                ...chat,
-                isSelf: chat.email === userData?.email
+            const formattedChats = response.data.chats.map((chat: any) => ({
+                uid: chat.uid,
+                userId: chat.uid, // Using uid as userId for consistency
+                userName: chat.userName,
+                content: chat.message,
+                timestamp: new Date(chat.timestamp).getTime(),
+                email: chat.email,
+                isSelf: chat.email === userData?.email,
+                type: chat.type,
+                role: chat.role
             }));
 
             setMessages(formattedChats);
+
+            // Optionally store total messages and last updated time
+            const { totalMessages, lastUpdated } = response.data;
+            console.log(`Loaded ${totalMessages} messages, last updated: ${lastUpdated}`);
+
             return true;
         } catch (error) {
             console.error('Error fetching chat messages:', error);
@@ -1319,12 +1382,6 @@ export default function HomeScreen() {
                     </div>
                 )}
             </form>
-
-            {typingUsers.length > 0 && (
-                <div className="text-sm text-muted-foreground mt-1">
-                    {typingUsers.map(user => user.name).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
-                </div>
-            )}
         </div>
     );
 

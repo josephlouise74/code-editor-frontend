@@ -38,11 +38,7 @@ export const createRoomApi = async (data: CreateRoomData) => {
     }
 };
 
-interface JoinRoomData {
-    roomId: string;
-    password: string;
-    email: string;
-}
+
 
 export const joinRoomApi = async (data: any) => {
     try {
@@ -63,18 +59,7 @@ export const joinRoomApi = async (data: any) => {
     }
 };
 
-interface UpdateCodeData {
-    roomId: string;
-    roomName: string;
-    accessCode: string;
-    role: string;
-    codeContent: {
-        html: string;
-        css: string;
-        javascript: string;
-    };
-    token: string;
-}
+
 
 export const updateSaveChangesCodeApi = async (data: any) => {
     try {
@@ -164,13 +149,7 @@ export const joinParticipantInRoomApiRequest = async (data: any) => {
     }
 };
 
-interface ChatMessageData {
-    roomId: string;
-    token: string;
-    name: string;
-    email: string;
-    message: string;
-}
+
 
 export const sendNewMessageInGroupChatApiRequest = async (data: any) => {
     try {
@@ -180,7 +159,6 @@ export const sendNewMessageInGroupChatApiRequest = async (data: any) => {
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${data.token}`
                 },
             }
         );

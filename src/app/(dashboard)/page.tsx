@@ -30,8 +30,6 @@ const participantSchema = z.object({
     email: z.string().email("Please enter a valid email address"),
 });
 
-type ParticipantFormValues = z.infer<typeof participantSchema>;
-
 const JoinRoomForm = observer(() => {
     const router = useRouter();
 
@@ -44,13 +42,7 @@ const JoinRoomForm = observer(() => {
         },
     });
 
-    const participantForm = useForm<ParticipantFormValues>({
-        resolver: zodResolver(participantSchema),
-        defaultValues: {
-            name: "",
-            email: "",
-        },
-    });
+
 
 
     const onSubmit = async (data: JoinRoomFormValues) => {
