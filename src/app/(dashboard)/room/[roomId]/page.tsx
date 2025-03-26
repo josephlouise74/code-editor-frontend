@@ -1567,7 +1567,7 @@ export default function HomeScreen() {
                                             {users
                                                 .filter((u) => !u.online)
                                                 .map((user) => (
-                                                    <div key={user.id} className="flex items-center space-x-2">
+                                                    <div key={`offline-${user.id || user.email}`} className="flex items-center space-x-2">
                                                         <div className="w-2 h-2 rounded-full bg-gray-300" />
                                                         <Avatar className="h-8 w-8">
                                                             <AvatarFallback>Code</AvatarFallback>
@@ -1671,11 +1671,11 @@ export default function HomeScreen() {
                                                             index === self.findIndex(m => m.email === msg.email)
                                                         )
                                                         .map((participant) => (
-                                                            <Tooltip key={participant.email}>
+                                                            <Tooltip key={`participant-${participant.email}-${participant.uid || Date.now()}`}>
                                                                 <TooltipTrigger>
                                                                     <Avatar className="h-8 w-8 cursor-pointer hover:ring-2 hover:ring-primary transition-all">
                                                                         <AvatarFallback className="bg-primary/10 text-primary">
-                                                                            {participant.name?.charAt(0)?.toUpperCase() || '?'}
+                                                                            {participant.userName?.charAt(0)?.toUpperCase() || '?'}
                                                                         </AvatarFallback>
                                                                     </Avatar>
                                                                 </TooltipTrigger>
@@ -1777,7 +1777,7 @@ export default function HomeScreen() {
                                                         <div className="text-gray-500 italic p-2">No console output yet. Run your code to see logs here.</div>
                                                     ) : (
                                                         consoleLogs.map((log) => (
-                                                            <div key={log.id} className={`py-1 ${getConsoleLogClass(log.type)}`}>
+                                                            <div key={`log-${log.id}-${log.timestamp}`} className={`py-1 ${getConsoleLogClass(log.type)}`}>
                                                                 {log.content}
                                                             </div>
                                                         ))
@@ -1803,3 +1803,4 @@ export default function HomeScreen() {
         </TooltipProvider>
     );
 }
+

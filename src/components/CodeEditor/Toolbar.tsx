@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { ShareDialog } from "./ShareDialog";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 
 /**
@@ -57,6 +57,8 @@ interface ToolBarProps {
     // Add new props for chat sidebar
     showChatSidebar: boolean;
     setShowChatSidebar: (show: boolean) => void;
+    token: string;
+    collaborator?: boolean;
 }
 
 export default function ToolBar({
@@ -76,16 +78,18 @@ export default function ToolBar({
     token,
     // Add new props with default values
     showChatSidebar = false,
-    setShowChatSidebar = () => { }
+    setShowChatSidebar = () => { },
+    collaborator
 }: any) {
 
     const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const isCollaborator = searchParams.get('collaborator') === 'true';
 
     const handleShareRoom = () => {
         setIsShareDialogOpen(true);
     };
-
-    const router = useRouter(); // Add this hook
 
     // Add leave room function
     const handleLeaveRoom = () => {
@@ -209,17 +213,24 @@ export default function ToolBar({
                         </TooltipContent>
                     </Tooltip>
 
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button onClick={handleShareRoom} variant="outline" size="sm" className="h-8">
-                                <Share2 size={16} className="mr-1" />
-                                <span className="hidden md:inline">Share</span>
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>Share Room</p>
-                        </TooltipContent>
-                    </Tooltip>
+                    {!isCollaborator && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    onClick={handleShareRoom}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                >
+                                    <Share2 size={16} className="mr-1" />
+                                    <span className="hidden md:inline">Share</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Share Room</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    )}
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button onClick={handleSaveChanges} variant="outline" size="sm" className="h-8">

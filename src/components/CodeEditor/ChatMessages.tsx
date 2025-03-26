@@ -519,8 +519,9 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
     }, [searchParams]);
 
     const renderMessage = useCallback((message: Message): JSX.Element => {
+        // Add debug logging
+        console.log('Message data:', message);
 
-        console.log('Rendering Message 3333333333333333333333:', message);
         const isSelf = message.isSelf || isOwnMessage(message.email);
         const isHost = message.role === 'host';
         const messageType = isSelf ? MESSAGE_TYPES.SELF : isHost ? MESSAGE_TYPES.HOST : MESSAGE_TYPES.MEMBER;
@@ -579,21 +580,18 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
                         message.type === 'voice' && "p-2",
                         "transition-all duration-200 hover:shadow-md"
                     )}>
-                        {message.type === 'voice' && (
-                            <>
-                                {console.log('Rendering Voice Message:', {
-                                    content: message.content,
-                                    duration: message.duration,
-                                    messageType,
-                                    filePath: message.filePath
-                                })}
-                                <AudioPlayer
-                                    src={message.content as any || ''}
-                                    duration={message.duration}
-                                    isCompact={true}
-                                    messageType={messageType}
-                                />
-                            </>
+                        {message.type === 'voice' ? (
+                            <AudioPlayer
+                                src={message.content}
+                                duration={message.duration || 0}
+                                isCompact={true}
+                                messageType={messageType}
+                            />
+                        ) : (
+                            // Handle text messages
+                            <div className="whitespace-pre-wrap break-words">
+                                {message.content || message.content}
+                            </div>
                         )}
 
                         <MessageTimestamp
@@ -676,7 +674,7 @@ export function ChatMessages({ messages, userData, roomId, onNewMessage, partici
                                 </div>
                                 <div className="space-y-3">
                                     {dateMessages.map((message) => (
-                                        <div key={`message-${message.uid || `${date}-${String(message.timestamp)}-${message.userId}`}`}>
+                                        <div key={message.uid || `${message.email}-${message.timestamp}-${message.type}`}>
                                             {renderMessage(message)}
                                         </div>
                                     ))}
